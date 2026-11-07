@@ -1,0 +1,4 @@
+# Ignore Java compiled class files
+*.class
+# Ignore .ky API key files
+*.ky
