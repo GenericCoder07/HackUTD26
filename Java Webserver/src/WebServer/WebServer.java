@@ -3,25 +3,35 @@ package WebServer;
 import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.HashMap;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.concurrent.Executors;
 
 import javax.swing.JOptionPane;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import com.sun.net.httpserver.HttpServer;
 
-import Database.StorageTech;
 import WebToolkit.APIHandler;
 import WebToolkit.DirectoryHandler;
 import WebToolkit.FileHandler;
 
 public class WebServer
 {
-	static HashMap<String, User> users = new HashMap<>();
-	static StorageTech userDatabase;
+	static JSONObject networkJSON;
+	static JSONObject opsJSON;
+	
 	@SuppressWarnings("resource")
 	public static void main(String[] args) throws IOException
 	{
@@ -42,14 +52,21 @@ public class WebServer
 					return badResponse("GitHub Repo link not included");
 				
 				if(!loadGithub(githubRepo))
-					return badResponse("GitHub Repo link not included");
+					return badResponse("GitHub Repo Get Failed");
 				
 				Event[] events = getEvents();
 				
 				if(events == null || events.length == 0)
 					return badResponse("Event Get Failed");
 				
+				JSONArray eventsArray = new JSONArray();
+				for(Event e : events)
+					eventsArray.put(e.toJSON());
+				
+				System.out.println(eventsArray);
+				
 				JSONObject ret = new JSONObject();
+				ret.put("events", eventsArray);
 				ret.put("response", 200);
 				ret.put("success", true);
 				ret.put("response-text", "Events successfully set");
@@ -80,18 +97,34 @@ public class WebServer
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
+				JSONObject ret = new JSONObject();
+				ret.put("network", networkJSON);
+				ret.put("response", 200);
+				ret.put("success", true);
+				ret.put("response-text", "Events successfully set");
 				
+				return ret;
+			}
+			
+		});
+		server.createContext("/api/exportevents", new APIHandler() {
+
+			public JSONObject handleAPICall(JSONObject JSON)
+			{
+				String sortParam = getStringOrDefault(JSON, "sort-param", "RECENT");
+				Event.sort = EventSort.valueOf(sortParam);
 				
+
 				JSONObject ret = new JSONObject();
 				ret.put("response", 200);
 				ret.put("success", true);
 				ret.put("response-text", "Events successfully set");
 				
-				return null;
+				
+				return ret;
 			}
 			
 		});
-		
 
 		server.createContext("/css", new DirectoryHandler("/css", new File("websiteFiles")));
 		server.createContext("/js", new DirectoryHandler("/js", new File("websiteFiles")));
@@ -101,12 +134,121 @@ public class WebServer
 
 	public static Event[] getEvents()
 	{
-		return null;
+		try
+		{
+			return new EventAnalyzer(networkJSON, opsJSON).analyze(Path.of("telemetry.csv"));
+		}
+		catch(IOException | IllegalArgumentException | JSONException exception)
+		{
+			System.err.println("Event analysis failed: " + exception.getMessage());
+			return null;
+		}
 	}
 
+	@SuppressWarnings("resource")
 	public static boolean loadGithub(String github)
 	{
-		return false;
+		if(github == null)
+			return false;
+
+		Path temporaryCSV = null;
+		try
+		{
+			URI folder = URI.create(github.trim());
+			if(!"https".equalsIgnoreCase(folder.getScheme()) || !"github.com".equalsIgnoreCase(folder.getHost()))
+				return false;
+
+			String[] parts = folder.getPath().split("/");
+			if(parts.length < 6 || !"tree".equals(parts[3]))
+				return false;
+
+			String owner = parts[1];
+			String repository = parts[2];
+			String branch = parts[4];
+			StringBuilder directory = new StringBuilder();
+			for(int i = 5; i < parts.length; i++)
+			{
+				if(parts[i].isEmpty())
+					continue;
+				if(directory.length() > 0)
+					directory.append('/');
+				directory.append(encodePathPart(parts[i]));
+			}
+			if(owner.isEmpty() || repository.isEmpty() || branch.isEmpty() || directory.length() == 0)
+				return false;
+
+			String rawDirectory = "https://raw.githubusercontent.com/"
+					+ encodePathPart(owner) + "/"
+					+ encodePathPart(repository) + "/"
+					+ encodePathPart(branch) + "/"
+					+ directory + "/";
+
+			HttpClient client = HttpClient.newBuilder()
+					.followRedirects(HttpClient.Redirect.NORMAL)
+					.build();
+			byte[] networkData = download(client, URI.create(rawDirectory + "network.json"));
+			byte[] opsData = download(client, URI.create(rawDirectory + "ops.json"));
+			byte[] telemetryData = download(client, URI.create(rawDirectory + "telemetry.csv"));
+
+			networkJSON = new JSONObject(new String(networkData, StandardCharsets.UTF_8));
+			opsJSON = new JSONObject(new String(opsData, StandardCharsets.UTF_8));
+
+			Path telemetryCSV = Path.of("telemetry.csv").toAbsolutePath();
+			temporaryCSV = Files.createTempFile(telemetryCSV.getParent(), ".telemetry-", ".csv.tmp");
+			Files.write(temporaryCSV, telemetryData);
+			try
+			{
+				Files.move(temporaryCSV, telemetryCSV, StandardCopyOption.ATOMIC_MOVE,
+						StandardCopyOption.REPLACE_EXISTING);
+			}
+			catch(AtomicMoveNotSupportedException exception)
+			{
+				Files.move(temporaryCSV, telemetryCSV, StandardCopyOption.REPLACE_EXISTING);
+			}
+			temporaryCSV = null;
+
+			System.out.println(networkJSON);
+			System.out.println(opsJSON);
+			
+			return networkJSON != null && opsJSON != null;
+		}
+		catch(IllegalArgumentException | IOException | JSONException exception)
+		{
+			return false;
+		}
+		catch(InterruptedException exception)
+		{
+			Thread.currentThread().interrupt();
+			return false;
+		}
+		finally
+		{
+			if(temporaryCSV != null)
+			{
+				try
+				{
+					Files.deleteIfExists(temporaryCSV);
+				}
+				catch(IOException exception)
+				{
+					// The failed temporary download can be cleaned up later.
+				}
+			}
+		}
+	}
+
+	private static byte[] download(HttpClient client, URI file) throws IOException, InterruptedException
+	{
+		HttpRequest request = HttpRequest.newBuilder(file).GET().build();
+		HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+		if(response.statusCode() < 200 || response.statusCode() >= 300)
+			throw new IOException("GitHub returned HTTP " + response.statusCode());
+		return response.body();
+	}
+
+	private static String encodePathPart(String part)
+	{
+		return URLEncoder.encode(part, StandardCharsets.UTF_8).replace("+", "%20");
 	}
 
 	public static String getStringOrDefault(JSONObject JSON, String key, String defaultObject)

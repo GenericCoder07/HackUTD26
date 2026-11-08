@@ -6,7 +6,6 @@ import java.io.OutputStream;
 
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.json.JSONTokener;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -28,11 +27,12 @@ public abstract class APIHandler implements HttpHandler
 			ln = reader.readLine();
 		}
 		
-		JSONTokener tokenizer = new JSONTokener(builder.toString());
 		JSONObject object = null;
 		try
 		{
-			object = new JSONObject(tokenizer);
+			if(builder.toString().isEmpty())
+				builder = new StringBuilder("{}");
+			object = new JSONObject(builder.toString());
 		} 
 		catch (JSONException e)
 		{
