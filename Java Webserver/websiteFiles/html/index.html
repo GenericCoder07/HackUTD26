@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Beat the Shutdown · Operations console</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">EOG</span><div><h1>Beat the Shutdown</h1><span>Operations console</span></div></div>
+    <div class="dataset-control"><label for="dataset">Recording dataset</label><div class="dataset-row"><select id="dataset"><option>Discovering datasets…</option></select><button id="refresh" class="header-icon" title="Refresh datasets" aria-label="Refresh datasets">↻</button></div></div>
+    <div class="analysis-time"><span>RECORDING ENDPOINT · UTC</span><strong id="analysis-time">Analysis time unavailable</strong></div>
+    <button id="export" class="primary" disabled>Export events</button>
+  </header>
+  <section class="dataset-notices" aria-label="Dataset status">
+    <div id="load-status" role="status" aria-live="polite">Discovering available recordings…</div>
+    <div id="discovery-status"></div>
+    <details id="manual"><summary>Enter dataset folder manually</summary><form id="manual-form"><label for="manual-path">Relative folder in nihaal419/HackUTD-ZeroDay</label><div><input id="manual-path" placeholder="history/snapshot_2026-10-08T1200" required autocomplete="off"><button type="submit">Analyze folder</button></div><small id="manual-status">Requires network.json, ops.json, and telemetry.csv.</small></form></details>
+    <div id="export-status" aria-live="polite"></div>
+  </section>
+  <nav class="mobile-tabs" aria-label="Workspace"><button data-tab="events" aria-pressed="true">Events</button><button data-tab="diagram" aria-pressed="false">Diagram</button></nav>
+  <main class="workspace" data-tab="events">
+    <aside class="events-panel panel" aria-label="Events">
+      <div class="panel-heading"><h2>Events</h2><span id="ongoing-count" class="quiet"></span></div>
+      <div class="event-controls"><div class="segments" id="status-filter" aria-label="Event status"><button data-status="ongoing" aria-pressed="true">Ongoing <span></span></button><button data-status="resolved" aria-pressed="false">Resolved <span></span></button><button data-status="all" aria-pressed="false">All <span></span></button></div><div class="sort-row"><span>Sort by</span><div id="sort-controls"><button data-sort="priority" aria-pressed="true">Priority</button><button data-sort="recent" aria-pressed="false">Recent</button><button data-sort="cost" aria-pressed="false">Cost</button></div></div><div id="sort-status" role="status"></div></div>
+      <div id="scope-label" class="scope-label">All systems</div><div id="event-list" class="event-list"></div>
+    </aside>
+    <section class="diagram-panel panel" aria-label="Network schematic">
+      <div class="diagram-heading"><nav id="breadcrumbs" aria-label="Schematic navigation"></nav><button id="inspector-toggle" aria-expanded="true" aria-controls="inspector">Details</button></div>
+      <div class="diagram-caption"><span id="diagram-title">Network overview</span><span>Schematic · not to scale</span></div>
+      <div id="diagram-surface" tabindex="0" aria-label="Interactive schematic. Drag to pan; use zoom controls to change scale.">
+        <svg id="diagram" xmlns="http://www.w3.org/2000/svg" role="group" aria-label="Equipment schematic"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="arrow"/></marker><clipPath id="tank-clip"><rect x="-18" y="-23" width="36" height="46" rx="4"/></clipPath></defs><g id="viewport"></g></svg>
+        <div id="diagram-message" class="diagram-message"></div>
+        <div class="zoom-controls" aria-label="Diagram zoom"><button id="zoom-out" aria-label="Zoom out">−</button><output id="zoom-value">100%</output><button id="zoom-in" aria-label="Zoom in">+</button><button id="fit" aria-label="Fit diagram to view">Fit</button></div>
+      </div>
+      <footer class="diagram-footer"><span><i class="legend-dot fault"></i> Ongoing alert</span><span><i class="legend-dot neutral"></i> No active alert</span><span id="diagram-hint">Select a system to explore →</span></footer>
+    </section>
+    <aside id="inspector" class="inspector panel" aria-label="Context inspector"><div class="panel-heading"><h2>Inspector</h2><button id="inspector-close" aria-label="Close inspector">×</button></div><div id="inspector-content"></div></aside>
+  </main>
+  <footer class="app-footer"><span>Recording analysis · recommendations are advisory</span><span>No operational controls</span></footer>
+</body>
+</html>
