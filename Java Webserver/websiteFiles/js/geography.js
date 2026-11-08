@@ -4,6 +4,7 @@
 const GeoMap = (() => {
   let map, layers, tiles, key = null, network = null, userZoom = false, focus = null;
   let needsFit = false;
+  let zoomFrame = null, zoomGoal = null, zoomTick = 0;
   let previousZoom = 0, tileErrors = 0, tileTimer, backdrop = true;
   const cameras = new Map(), reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const touches = new Map();
@@ -34,7 +35,8 @@ const GeoMap = (() => {
   function ensureMap() {
     if (map) return true;
     if (typeof L === 'undefined') { status('Map library unavailable. Use the locations list to explore equipment.'); return false; }
-    map = L.map('network-map', { zoomControl: false, zoomSnap: .25, zoomDelta: 1, maxZoom: 19,
+    map = L.map('network-map', { zoomControl: false, zoomSnap: 0, zoomDelta: .75, maxZoom: 19,
+      scrollWheelZoom: false,
       minZoom: 1, zoomAnimation: !reduced.matches, fadeAnimation: !reduced.matches, attributionControl: true });
     map.setView([0,0],1,{animate:false});
     layers = L.layerGroup().addTo(map);
@@ -56,10 +58,16 @@ const GeoMap = (() => {
     };
     control.addTo(map);
     const container = map.getContainer();
-    container.addEventListener('wheel', event => { userZoom = true; focus = map.mouseEventToContainerPoint(event); }, { passive: true });
+    container.addEventListener('wheel', event => {
+      if (event.target.closest?.('.map-backdrop-control, .leaflet-control')) return;
+      event.preventDefault();
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? container.clientHeight : 1);
+      glide(-Math.max(-180, Math.min(180, delta)) / 60, map.mouseEventToContainerPoint(event));
+    }, { passive: false });
     container.addEventListener('dblclick', event => { userZoom = true; focus = map.mouseEventToContainerPoint(event); });
     container.addEventListener('keydown', event => { if (['+', '-', '=', '_'].includes(event.key)) { userZoom = true; focus = map.getSize().divideBy(2); } });
     container.addEventListener('pointerdown', event => {
+      stopZoom();
       if (event.pointerType !== 'touch') return;
       touches.set(event.pointerId, map.mouseEventToContainerPoint(event));
       userZoom = true; focus = map.mouseEventToContainerPoint(event);
@@ -80,7 +88,30 @@ const GeoMap = (() => {
     map.on('moveend', remember);
     return true;
   }
-  function camera(value) { userZoom = false; map.setView(value.center, value.zoom, { animate: false }); }
+  function stopZoom() { cancelAnimationFrame(zoomFrame); zoomFrame = null; zoomGoal = null; }
+  function glide(delta, point) {
+    focus = point;
+    const target = Math.max(1, Math.min(19, (zoomGoal?.value ?? map.getZoom()) + delta));
+    if (reduced.matches) { stopZoom(); userZoom = true; map.setZoomAround(point,target,{animate:false}); return; }
+    // Retarget one running frame loop; never queue or restart wheel animations.
+    zoomGoal = { value:target, point, key, updated:performance.now() };
+    if (zoomFrame !== null) return;
+    zoomTick = performance.now();
+    const step = now => {
+      const goal = zoomGoal;
+      if (!goal || goal.key !== key || state.scope === 'facility') { stopZoom(); return; }
+      const current = map.getZoom(), elapsed = Math.min(64, Math.max(1, now - zoomTick)); zoomTick = now;
+      const done = Math.abs(goal.value-current) < .001 || now-goal.updated >= 100;
+      const next = done ? goal.value : current + (goal.value-current) * (1-Math.exp(-elapsed/22));
+      userZoom = true; focus = goal.point;
+      map.setZoomAround(goal.point,next,{animate:false});
+      if (zoomGoal !== goal) return; // Navigation/fitting cancelled this gesture.
+      if (done) { zoomFrame = null; zoomGoal = null; }
+      else zoomFrame = requestAnimationFrame(step);
+    };
+    zoomFrame = requestAnimationFrame(step);
+  }
+  function camera(value) { stopZoom(); userZoom = false; map.setView(value.center, value.zoom, { animate: false }); }
   function transition(inward) {
     if (!inward && state.scope === 'system' && map.getZoom() <= 9) { navigate('network'); return; }
     if (!inward) return;
@@ -90,19 +121,43 @@ const GeoMap = (() => {
     const nearest = candidates.filter(item => item.point).map(item => ({ ...item, distance: map.latLngToContainerPoint(item.point).distanceTo(target) }))
       .filter(item => item.distance <= 80).sort((a,b) => a.distance - b.distance || a.id.localeCompare(b.id))[0];
     if (nearest) {
-      if (state.scope === 'network') navigate('system', nearest.id);
+      if (state.scope === 'network') {
+        const continuation = zoomGoal;
+        // A zoom drill-down changes overlays, not the camera or wheel destination.
+        cameras.set(`system:${nearest.id}:`, {center:map.getCenter(),zoom:map.getZoom()});
+        navigate('system', nearest.id);
+        if (continuation && continuation.value > map.getZoom()) glide(continuation.value-map.getZoom(),continuation.point);
+      }
       else navigate('facility', state.systemId, nearest.id);
     }
   }
-  function marker(point, title, kind, count, action) {
+  function systemSummary(system) {
+    const box = document.createElement('div'); box.className = 'system-summary';
+    const heading = document.createElement('strong'); heading.textContent = system.name && system.name !== system.id ? `${system.name} · ${system.id}` : system.id;
+    const facilities = system.facilities, wells = facilities.reduce((sum,facility) => sum + (facility.wells?.length ?? 0),0);
+    const events = state.events.filter(event => event.system_id === system.id);
+    const rows = [`${facilities.length} facilities · ${wells} wells`,
+      `${ongoing(events).length} ongoing · ${events.filter(event => event.status === 'resolved').length} resolved incidents`];
+    const capacities = facilities.map(facility => facility.tank?.capacity_bbl);
+    if (capacities.length && capacities.every(value => Number.isFinite(value) && value >= 0))
+      rows.push(`${new Intl.NumberFormat('en-US',{maximumFractionDigits:0}).format(capacities.reduce((sum,value) => sum+value,0))} bbl total tank capacity`);
+    box.append(heading);
+    for (const text of rows) { const row = document.createElement('div'); row.textContent = text; box.append(row); }
+    return box;
+  }
+  function marker(point, title, kind, count, action, summary = null) {
     if (!point) return;
     const content = document.createElement('span'); content.className = `geo-marker ${kind}${count ? ' alert' : ''}`;
     content.textContent = kind === 'system' ? title : kind === 'disposal' ? '◆' : kind === 'yard' ? 'T' : '●';
     if (count) { const badge = document.createElement('b'); badge.textContent = count; content.append(badge); }
     const node = L.marker(point, { icon: L.divIcon({ html: content, className: 'geo-marker-shell', iconSize: kind === 'system' ? [94,36] : [28,28], iconAnchor: kind === 'system' ? [47,18] : [14,14] }),
-      title: `${title}${count ? ` · ${count} ongoing alerts` : ''}`, alt: title, keyboard: true, riseOnHover: true, zIndexOffset: kind === 'system' ? 1000 : 0 }).addTo(layers);
+      title: summary ? '' : `${title}${count ? ` · ${count} ongoing alerts` : ''}`, alt: title, keyboard: true, riseOnHover: true, zIndexOffset: kind === 'system' ? 1000 : 0 }).addTo(layers);
     const label = document.createElement('span'); label.textContent = title;
-    node.bindTooltip(label, { direction: 'top' }); node.on('click', action);
+    node.bindTooltip(summary ?? label, { direction: 'top', className:summary ? 'system-summary-tooltip' : '' }); node.on('click', action);
+    if (summary) {
+      node.getElement().addEventListener('focus', () => node.openTooltip());
+      node.getElement().addEventListener('blur', () => node.closeTooltip());
+    }
     node.getElement().setAttribute('aria-label', `${title}${count ? ` · ${count} ongoing alerts` : ''}`);
   }
   function connection(from, to, count) {
@@ -135,6 +190,7 @@ const GeoMap = (() => {
   }
   function fit() {
     if (!map || state.scope === 'facility') return;
+    stopZoom();
     userZoom = false;
     if (!map.getContainer().clientWidth || !map.getContainer().clientHeight) { needsFit = true; return; }
     needsFit = false;
@@ -155,6 +211,7 @@ const GeoMap = (() => {
     const nextKey = viewKey();
     if (key !== nextKey && !wasHidden) remember();
     const changed = key !== nextKey || network !== state.network || wasHidden;
+    if (changed) stopZoom();
     key = nextKey; network = state.network;
     userZoom = false; map.invalidateSize({ pan:false, animate:false });
     if (changed) {
@@ -173,7 +230,7 @@ const GeoMap = (() => {
         marker(coordinate(facility),facility.id,'facility',facilityCount,() => navigate('facility',system.id,facility.id));
       }
       if (system.disposal_site) marker(disposal,system.disposal_site.id,'disposal',0,() => { if (state.scope === 'network') navigate('system',system.id); selectAsset(system.disposal_site.id); });
-      if (state.scope === 'network') marker(coordinate(system.center),system.id,'system',count,() => navigate('system',system.id));
+      if (state.scope === 'network') marker(coordinate(system.center),system.id,'system',count,() => navigate('system',system.id),systemSummary(system));
       else marker(coordinate(system.truck_yard),`${system.id} truck yard`,'yard',0,() => {
         const text = document.createElement('span'); text.textContent = `${system.id} truck yard · coordinates supplied by dataset`;
         L.popup().setLatLng(coordinate(system.truck_yard)).setContent(text).openOn(map);
@@ -183,14 +240,15 @@ const GeoMap = (() => {
     document.getElementById('zoom-value').textContent = `Z ${map.getZoom().toFixed(1)}`;
   }
   function hide() {
+    stopZoom();
     remember();
     document.getElementById('network-map').hidden = true;
     document.getElementById('diagram').style.display = '';
     document.getElementById('map-status').hidden = true;
     document.getElementById('location-list').hidden = true;
   }
-  function reset() { cameras.clear(); key = null; network = null; }
-  function zoom(delta) { if (!map) return; userZoom = true; focus = map.getSize().divideBy(2); map.setZoom(map.getZoom()+delta,{animate: !reduced.matches}); }
+  function reset() { stopZoom(); cameras.clear(); key = null; network = null; }
+  function zoom(delta) { if (map) glide(delta,map.getSize().divideBy(2)); }
   function resize() { if (map && state.scope !== 'facility') { userZoom = false; map.invalidateSize({ pan:true, animate:false }); if (needsFit) fit(); } }
   function leaveFacility() {
     const system = systemById(), saved = cameras.get(`system:${state.systemId}:`);

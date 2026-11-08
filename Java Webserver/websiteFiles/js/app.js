@@ -15,7 +15,7 @@ const API = {
     const response = await fetch(path, { ...options, headers: { Accept: 'application/json', ...options.headers } });
 
     let data;
-    try { data = await response.json(); } catch { throw new Error(''); }
+    try { data = await response.json(); } catch { throw new Error('The server returned an unexpected response. Paste a GitHub dataset folder link to analyze it.'); }
     if (!response.ok) throw new Error(data['response-text'] ?? `Request failed (HTTP ${response.status}).`);
     this.checkMetadata(data);
     return data;
@@ -59,9 +59,7 @@ const API = {
   },
   async validateFolder() { return null; },
   async discoverDatasets() {
-    const data = await this.request('/api/datasets');
-    if (!Array.isArray(data.datasets)) throw new Error('Dataset discovery returned an invalid list.');
-    return data.datasets;
+    return []; // Live recordings are supplied explicitly through the folder-link form.
   }
 };
 
@@ -281,6 +279,11 @@ function section(title) { const node = el('section', 'inspector-section'); node.
 /* DATASET DISCOVERY AND SERIALIZED ANALYSIS */
 let discovering = false;
 async function discover() {
+  if (!DEMO_MODE) {
+    if (state.selectedFolder) selectDataset(state.selectedFolder);
+    else { $('manual').open = true; $('manual-path').focus(); }
+    return;
+  }
   if (discovering) return;
   discovering = true; $('refresh').disabled = true;
   const previousPaths = new Set(state.choices.map(choice => choice.path));
@@ -292,7 +295,7 @@ async function discover() {
     if (state.selectedFolder && !choices.some(choice => choice.path === state.selectedFolder.path)) state.choices.push(state.selectedFolder);
     renderDatasets();
     const added = state.loaded ? choices.filter(choice => !previousPaths.has(choice.path)).length : 0;
-    $('discovery-status').textContent = added ? `${added} new dataset${added === 1 ? '' : 's'} available. Choose a recording to analyze.` : choices.length ? 'Datasets checked · auto-check every 60s' : 'No eligible datasets found. Enter a folder manually.';
+    $('discovery-status').textContent = added ? `${added} new dataset${added === 1 ? '' : 's'} available. Choose a recording to analyze.` : choices.length ? 'Demo recordings ready' : 'No eligible datasets found. Enter a folder manually.';
     if (!state.selectedFolder && choices.length) selectDataset(choices.find(choice => choice.path === PREFERRED_DATASET) ?? choices[0]);
     else if (!choices.length && !state.loaded) $('load-status').textContent = 'No recording selected.';
   } catch (error) {
@@ -303,7 +306,7 @@ async function discover() {
 }
 function renderDatasets() {
   const select = $('dataset'); select.replaceChildren();
-  if (!state.choices.length) { const option = el('option', '', 'No datasets discovered'); select.append(option); select.disabled = true; return; }
+  if (!state.choices.length) { const option = el('option', '', 'Paste a dataset folder link below'); select.append(option); select.disabled = true; return; }
   select.disabled = false;
   for (const group of ['Practice', 'Judging', 'Manual']) {
     const choices = state.choices.filter(choice => choice.group === group); if (!choices.length) continue;
@@ -376,9 +379,23 @@ async function processSorts() {
 }
 async function manualDataset(event) {
   event.preventDefault();
-  const path = $('manual-path').value.trim().replace(/^\/+|\/+$/g, '');
-  if (!path || path.split('/').some(part => !part || part === '.' || part === '..' || !/^[\w. -]+$/.test(part))) {
-    $('manual-status').textContent = 'Enter a relative folder path, without a URL or parent traversal.'; return;
+  const input = $('manual-path').value.trim();
+  let path, url;
+  try {
+    if (/^https?:/i.test(input)) {
+      const parsed = new URL(input);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.username || parsed.password ||
+          parts.length < 5 || parts[2] !== 'tree' || parts.some(part => part === '.' || part === '..')) throw new Error();
+      url = `${parsed.origin}${parsed.pathname.replace(/\/$/, '')}`;
+      path = decodeURIComponent(parts.slice(4).join('/'));
+    } else {
+      path = input.replace(/^\/+|\/+$/g, '');
+      if (!path || path.split('/').some(part => !part || part === '.' || part === '..' || !/^[\w. -]+$/.test(part))) throw new Error();
+      url = folderUrl(path);
+    }
+  } catch {
+    $('manual-status').textContent = 'Paste an HTTPS GitHub folder link containing /tree/<branch>/<folder>, or a relative challenge folder path.'; return;
   }
   const submit = event.currentTarget.querySelector('button'); submit.disabled = true;
   let validated;
@@ -386,10 +403,11 @@ async function manualDataset(event) {
   catch { validated = null; }
   submit.disabled = false;
   if (validated === false) { $('manual-status').textContent = 'Folder is accessible but is missing one or more required input files.'; return; }
-  $('manual-status').textContent = validated ? 'All three input files validated.' : 'GitHub metadata unavailable. Sending your explicitly entered folder without validation.';
-  const choice = { path, url: folderUrl(path), group: 'Manual' };
-  if (!state.choices.some(item => item.path === path)) state.choices.push(choice);
-  selectDataset(state.choices.find(item => item.path === path));
+  $('manual-status').textContent = validated ? 'All three input files validated.' : 'Analyzing the folder link with the Java backend…';
+  const choice = { path, url, group: 'Manual' };
+  const existing = state.choices.findIndex(item => item.url === url);
+  if (existing < 0) state.choices.push(choice);
+  selectDataset(existing < 0 ? choice : state.choices[existing]);
 }
 
 /* RENDERING — panels do not rerender while the viewport moves. */
@@ -401,6 +419,7 @@ function renderLoadStatus() {
   } else if (state.datasetError) {
     status.className = 'error'; status.append(document.createTextNode(`${state.datasetError}${state.loaded ? ` Previous results retained: ${state.loaded.path}.` : ''}`), button('Retry analysis', () => selectDataset(state.selectedFolder), 'retry'));
   } else if (state.loaded) status.textContent = `Recording: ${state.loaded.path}`;
+  else status.textContent = 'Paste a GitHub dataset folder link below to begin.';
   $('analysis-time').textContent = state.loaded?.asOf != null ? dateText(state.loaded.asOf) : 'Analysis time unavailable';
   $('export').disabled = state.loading || !!state.datasetError || !state.loaded;
   $('diagram-caption-kind').textContent = state.scope === 'facility' ? 'Equipment schematic · not to scale' : 'Geographic positions · indicative connections';
@@ -657,13 +676,39 @@ function fitDiagram() {
   state.facilityFits.set(viewKey(), scale);
   state.viewports.set(viewKey(), { x: (rect.width - bounds.width * scale) / 2 - bounds.x * scale, y: (rect.height - 45 - bounds.height * scale) / 2 - bounds.y * scale, scale }); applyTransform();
 }
-function zoomAt(factor, x, y) {
+let zoomFrame = null, zoomTarget = null;
+function zoomAt(factor, x, y, smooth = false) {
   if (!state.bounds) return;
-  const value = transform(), minimum = .08, scale = Math.max(minimum, Math.min(2.5, value.scale * factor)), ratio = scale / value.scale;
-  if (state.scope === 'facility' && value.scale * factor < (state.facilityFits.get(viewKey()) ?? value.scale) * .65) { GeoMap.leaveFacility(); return; }
-  value.x = x - (x - value.x) * ratio; value.y = y - (y - value.y) * ratio; value.scale = scale; applyTransform();
+  const value = transform(), currentKey = viewKey();
+  if (zoomTarget && zoomTarget.key !== currentKey) { cancelAnimationFrame(zoomFrame); zoomFrame = null; zoomTarget = null; }
+  const base = zoomTarget?.key === currentKey ? zoomTarget.scale : value.scale;
+  const requested = (smooth ? base : value.scale) * factor;
+  if (state.scope === 'facility' && requested < (state.facilityFits.get(currentKey) ?? value.scale) * .65) {
+    cancelAnimationFrame(zoomFrame); zoomFrame = null; zoomTarget = null; GeoMap.leaveFacility(); return;
+  }
+  const scale = Math.max(.08, Math.min(2.5, requested));
+  const setScale = next => {
+    const ratio = next / value.scale;
+    value.x = x - (x - value.x) * ratio; value.y = y - (y - value.y) * ratio; value.scale = next; applyTransform();
+  };
+  if (!smooth || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    cancelAnimationFrame(zoomFrame); zoomFrame = null; zoomTarget = null; setScale(scale); return;
+  }
+  zoomTarget = { key:currentKey, scale, x, y, updated:performance.now() };
+  if (zoomFrame !== null) return;
+  let previous = performance.now();
+  const step = now => {
+    if (!zoomTarget || viewKey() !== currentKey || transform() !== value) { zoomTarget = null; zoomFrame = null; return; }
+    const elapsed = Math.min(64, Math.max(1, now-previous)); previous = now;
+    x = zoomTarget.x; y = zoomTarget.y;
+    const done = Math.abs(zoomTarget.scale-value.scale) < .0001 || now-zoomTarget.updated >= 70;
+    setScale(done ? zoomTarget.scale : value.scale + (zoomTarget.scale-value.scale) * (1-Math.exp(-elapsed/18)));
+    if (!done) zoomFrame = requestAnimationFrame(step);
+    else { zoomTarget = null; zoomFrame = null; }
+  };
+  zoomFrame = requestAnimationFrame(step);
 }
-function zoomCenter(factor) { if (state.scope !== 'facility' && state.network) { GeoMap.zoom(factor > 1 ? 1 : -1); return; } const rect = $('diagram-surface').getBoundingClientRect(); zoomAt(factor, rect.width / 2, rect.height / 2); }
+function zoomCenter(factor) { if (state.scope !== 'facility' && state.network) { GeoMap.zoom(factor > 1 ? .75 : -.75); return; } const rect = $('diagram-surface').getBoundingClientRect(); zoomAt(factor ** 1.5, rect.width / 2, rect.height / 2, true); }
 function revealSelectedAsset() {
   const node = [...$('viewport').querySelectorAll('[data-node-id]')].find(item => item.getAttribute('data-node-id') === state.assetId); if (!node) return;
   const rect = node.getBoundingClientRect(), surface = $('diagram-surface').getBoundingClientRect(), value = transform();
@@ -677,10 +722,11 @@ function pointerDistance() { const points = [...pointers.values()]; return Math.
 function pointerCenter() { const points = [...pointers.values()]; return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 }; }
 function setupViewport() {
   const surface = $('diagram-surface');
-  surface.addEventListener('wheel', event => { if (state.scope !== 'facility') return; if (!state.bounds) return; event.preventDefault(); const rect = surface.getBoundingClientRect(); const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1); zoomAt(Math.exp(-Math.max(-150, Math.min(150, delta)) * .006), event.clientX - rect.left, event.clientY - rect.top); }, { passive: false });
+  surface.addEventListener('wheel', event => { if (state.scope !== 'facility') return; if (!state.bounds) return; event.preventDefault(); const rect = surface.getBoundingClientRect(); const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1); zoomAt(Math.exp(-Math.max(-150, Math.min(150, delta)) * .00525), event.clientX - rect.left, event.clientY - rect.top, true); }, { passive: false });
   surface.addEventListener('pointerdown', event => {
     if (state.scope !== 'facility') return;
     if (event.target.closest('.zoom-controls') || event.target.closest('.diagram-message') || event.button !== 0) return;
+    cancelAnimationFrame(zoomFrame); zoomFrame = null; zoomTarget = null;
     const rect = surface.getBoundingClientRect(); pointers.set(event.pointerId, { x: event.clientX - rect.left, y: event.clientY - rect.top });
     const point = pointers.get(event.pointerId); gesture = { start: point, previous: point, moved: false, distance: pointers.size === 2 ? pointerDistance() : null, center: pointers.size === 2 ? pointerCenter() : null };
     // Capture after movement so taps retain the equipment click target.
@@ -727,7 +773,10 @@ $('inspector-close').addEventListener('click', () => { $('inspector').classList.
 document.querySelectorAll('[data-tab]').forEach(node => { if (node.tagName !== 'BUTTON') return; node.addEventListener('click', () => { document.querySelector('.workspace').dataset.tab = node.dataset.tab; document.querySelectorAll('button[data-tab]').forEach(tab => tab.setAttribute('aria-pressed', String(tab === node))); requestAnimationFrame(fitDiagram); }); });
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { state.eventId = state.assetId = null; renderEvents(); renderInspector(); renderDiagram(); } });
 if (matchMedia('(max-width:1099px)').matches) { $('inspector').classList.add('collapsed'); $('inspector-toggle').setAttribute('aria-expanded', 'false'); }
-setupViewport(); renderAll(); discover();
-
-setInterval(() => { if (!document.hidden) discover(); }, 60_000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) discover(); });
+setupViewport(); renderAll(); renderDatasets();
+if (DEMO_MODE) discover();
+else {
+  $('manual').open = true;
+  $('refresh').title = 'Reanalyze selected folder';
+  $('refresh').setAttribute('aria-label', 'Reanalyze selected folder');
+}

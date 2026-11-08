@@ -1,22 +1,10 @@
 # Watchpot · HackUTD26
 
-Watchpot is a hackathon operations dashboard for a produced-water collection network. It turns network configuration and sensor recordings into a geographic view of systems and facilities, detected incidents, tank shutdown countdowns, and advisory response plans.
+Watchpot is an operations dashboard for a produced-water collection network. It combines geographic network views, equipment schematics, telemetry-based incident detection, tank shutdown countdowns, and advisory response plans.
 
-Operators can locate a facility, inspect its equipment, review the evidence behind an incident, and compare response costs. The backend computes results from the selected recording; live mode does not read prewritten incident answers. Demo mode provides built-in sample events for presenting the interface without downloading a dataset.
+## Run locally
 
-## What the project does
-
-- Visualizes systems, facilities, disposal sites, and truck yards at their supplied coordinates.
-- Connects facilities to their disposal site and opens an equipment schematic for each facility.
-- Detects pump failures, pump degradation, and pipeline leaks from telemetry.
-- Estimates time until a failed facility's tank reaches its shutdown threshold.
-- Compares bounded truck-dispatch and well-shut-in plans using configured costs and production values.
-- Supports incident filtering, priority/recent/cost sorting, an evidence inspector, and JSON export.
-- Discovers new dataset folders in the public challenge repository without replacing the operator's current analysis.
-
-## Clone and run
-
-Install **Git** and **Java JDK 17 or newer**. Open Terminal on Mac/Linux or PowerShell on Windows, then run each line:
+Install Git and **Java JDK 17 or newer**, then run:
 
 ```sh
 git clone https://github.com/GenericCoder07/HackUTD26.git
@@ -25,122 +13,96 @@ javac --release 17 -sourcepath src -d bin src/WebServer/WebServer.java
 java -cp bin WebServer.WebServer
 ```
 
-Open **http://localhost:8080/** for real dataset analysis, or **http://localhost:8080/?mode=demo** for built-in sample events. Keep the terminal open; press **Ctrl+C** to stop. No Python, Node, API key, or frontend build step is required to run the app.
+Open [localhost:8080](http://localhost:8080/). Keep the terminal open; press **Ctrl+C** to stop. Python, Node, a database, and a frontend build are not required to run the app.
 
-After changing Java code, stop the server, rerun the `javac` and `java` commands from `Java Webserver`, and refresh the browser. Changing HTML/CSS/JavaScript only requires refreshing the browser. These commands run your current checkout; share the updated code with teammates before expecting them to see local changes.
+After Java changes, stop, compile, and restart the server. HTML, CSS, and JavaScript changes only require refreshing the browser. The current server binds to `localhost:8080`; public hosting needs an appropriate listener/proxy configuration.
 
-## Using the console
+## Load a recording
 
-- Choose a recording from the dataset dropdown. Live mode discovers folders containing `network.json`, `ops.json`, and `telemetry.csv` anywhere in `nihaal419/HackUTD-ZeroDay` on `main`.
-- New folders are checked at startup, every 60 seconds while visible, and with Refresh. A new folder appears in the dropdown; select it to compute its analysis. Existing results stay selected until you switch.
-- The network map uses supplied coordinates. Zoom near a system to enter it, then near a facility to inspect its equipment. Zoom out to return. Markers, breadcrumbs, and **Locations and unmapped entries** also provide navigation.
-- Dashed directional lines show facility-to-disposal membership. They are indicative connections; actual pipeline routes are not supplied. Wells, tanks, pumps, and pipelines use a labeled schematic inside each facility.
-- Switch off **Street map** to keep the geographic overlay on a plain background. Tile failures automatically retain this overlay. The map library is bundled locally; surrounding map tiles require internet access.
-- **Export events** downloads all computed events and the dataset metadata as JSON. Filters only affect the view.
+1. Open **Load a GitHub dataset folder**.
+2. Paste a folder URL, for example:
+   `https://github.com/nihaal419/HackUTD-ZeroDay/tree/main/history/snapshot_2026-10-08T1200`
+3. Click **Analyze folder**. The folder must contain `network.json`, `ops.json`, and `telemetry.csv`.
+4. Previously entered recordings remain selectable during the page session. The ↻ button explicitly analyzes the selected folder again.
 
-Live datasets require GitHub access. If discovery is unavailable, enter the exact relative folder path manually. GitHub rate-limit errors show when to retry. If another browser tab replaces the server's current analysis, select your dataset again; stale results are never mixed with the new dataset.
+A relative challenge folder path, such as `history/snapshot_2026-10-08T1200`, also works. There is no automatic repository discovery or background polling. Reloading the page clears the session's recording choices; paste a link again to analyze it.
 
-## How the map works
+**Demo:** open [localhost:8080/?mode=demo](http://localhost:8080/?mode=demo) for built-in sample events and coordinates. Demo analysis makes no backend or GitHub requests. Optional street tiles still use the internet; disable **Street map** for a presentation without tile requests.
 
-The street map comes from **OpenStreetMap raster tiles**. The browser requests the visible map squares from `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. **Leaflet 1.9.4** handles tile placement, panning, zoom controls, geographic projection, markers, and overlays. Leaflet's JavaScript, CSS, and images are bundled in this repository, so there is no CDN dependency or map API key.
+## Map and navigation
 
-There are two separate layers:
+- Systems, facilities, disposal sites, and truck yards use the dataset's coordinates. The initial view fits the loaded recording, rather than assuming a particular region.
+- Hover over a system for facility/well counts, ongoing/resolved incident counts, and total tank capacity when supplied.
+- Dashed arrows indicate facility-to-disposal membership. Actual pipeline routes and connections between systems are not inferred.
+- Zoom near a system at map level 11 to enter it; near a facility at level 15 to open its equipment schematic. Targets must be within 80 screen pixels of the zoom focus.
+- Zoom the facility below 65% of its fitted scale to return to its system at level 14. Zoom the system out to level 9 to return to the network.
+- Wheel and zoom-button input use continuous animation with an accumulating target. Reduced-motion preferences apply zoom immediately. Pinch, keyboard controls, clickable markers, breadcrumbs, and the locations list provide alternative navigation.
+- Equipment is schematic: **wells → tank → pump → pipeline → disposal**. Equipment coordinates are not supplied. Missing geographic coordinates remain accessible through **Locations and unmapped entries**.
 
-| Layer | Source | Purpose |
-| --- | --- | --- |
-| Streets and surrounding geography | OpenStreetMap's online tile service | Provides recognizable physical surroundings. |
-| Systems, assets, incident colors, labels, and connections | The selected dataset and computed events | Shows the actual network being analyzed. |
+The basemap uses **OpenStreetMap** raster tiles; **Leaflet 1.9.4** handles projection, markers, panning, and geographic overlays. Leaflet's JS/CSS/assets are bundled locally under `websiteFiles/vendor/leaflet`, so no CDN or map API key is needed. Street tiles require internet access. If they fail, markers, connections, labels, and the distance scale remain usable on a plain background.
 
-System positions come from `center`; facilities, disposal sites, and truck yards use their supplied coordinates. The initial camera fits the loaded dataset, so it is not restricted to Texas. No address lookup or geocoding is needed. Invalid or missing coordinates stay accessible through **Locations and unmapped entries** rather than receiving invented positions.
-
-Dashed arrows represent facility-to-disposal membership, **not surveyed pipeline routes**. The dataset does not supply equipment coordinates, so the facility view is a connected SVG schematic: wells → tank → pump → pipeline → disposal. No connections between systems are inferred.
-
-Zoom navigation follows the user's focus: at map zoom 11, a nearby system opens; at zoom 15, a nearby facility opens. The target must be within 80 screen pixels of the focus. Zooming the facility below 65% of its initial fitted scale returns to its system at zoom 14; zooming the system out to level 9 returns to the network. Parent camera positions are retained. Markers, breadcrumbs, keyboard controls, and the locations list provide explicit alternatives.
-
-If tiles cannot load, the app retains markers, connections, labels, and the distance scale on a plain background. The **Street map** toggle also enables this view. Online tiles require internet access; locally bundled Leaflet does not make the street imagery available offline. OpenStreetMap attribution remains visible; see its [copyright and attribution information](https://www.openstreetmap.org/copyright) and [tile usage policy](https://operations.osmfoundation.org/policies/tiles/). Leaflet's license is included in `Java Webserver/websiteFiles/vendor/leaflet/LICENSE`.
+The existing Watchpot logo is embedded as SVG in the page, retaining its design and aspect ratio without depending on the server's image response handling.
 
 ## Architecture
 
-The app is a single Java process serving both static frontend assets and a JSON API. The frontend uses plain HTML, CSS, JavaScript, Leaflet, and SVG. There is no frontend build pipeline, external database, or separate application server to configure.
+One Java process serves the frontend and API. The frontend is plain HTML/CSS/JavaScript with Leaflet and an SVG equipment schematic.
 
 ```text
-Browser: HTML / CSS / JavaScript
-  ├─ Leaflet geographic views ← OpenStreetMap street tiles
-  ├─ SVG equipment schematic
-  └─ Event list, inspector, filters, and export
-                    │ same-origin JSON API
-Java 17 HTTP server
-  ├─ WebToolkit: request validation, JSON responses, static assets
-  └─ DatasetService: isolated analysis and published snapshot
-       ├─ GitHubSource → challenge repository at a pinned commit
-       └─ EventAnalyzer → detected events, countdowns, response plans
+Browser: event list / inspector / geographic map / equipment schematic
+  ├─ optional OpenStreetMap street tiles
+  └─ same-origin HTTP requests
+Java server: WebServer + WebToolkit
+  ├─ serves HTML, CSS, JavaScript, and bundled map assets
+  ├─ downloads network.json, ops.json, telemetry.csv from a pasted folder URL
+  └─ EventAnalyzer computes events, countdowns, and response plans
 ```
+
+Paths below are relative to `Java Webserver/`:
 
 | Component | Responsibility |
 | --- | --- |
-| `src/WebServer/WebServer.java` | Starts the localhost server and registers API/static routes. |
-| `src/WebServer/GitHubSource.java` | Discovers dataset folders, resolves source commits, downloads inputs, and handles discovery caching and rate limits. |
-| `src/WebServer/DatasetService.java` | Validates selection, isolates each analysis, publishes complete snapshots, and rejects stale dataset IDs. |
-| `src/WebServer/EventAnalyzer.java` | Validates telemetry and computes incidents, countdowns, and advisory plans. |
-| `src/WebServer/Event.java` / `EventSort.java` | Defines event output and deterministic sorting. |
-| `src/WebToolkit/` | Handles HTTP methods, queries, structured errors, and byte-safe static responses, including the SVG logo. |
-| `websiteFiles/js/app.js` | Owns frontend state, data loading, demo fixtures, event interaction, SVG schematic, and exports. |
-| `websiteFiles/js/geography.js` | Owns geographic layers, map cameras, tile fallback, and map zoom navigation. |
-| `websiteFiles/vendor/leaflet/` | Contains the pinned local map library and its license. |
+| `src/WebServer/WebServer.java` | Registers routes, loads the GitHub folder, and invokes analysis. |
+| `src/WebServer/EventAnalyzer.java` | Computes incidents and advisory plans from configuration and telemetry. |
+| `src/WebServer/Event.java`, `EventSort.java` | Event serialization and current backend ordering. |
+| `src/WebToolkit/` | HTTP API and static file handling. |
+| `websiteFiles/js/app.js` | Pasted-link loading, demo fixtures, event panels, inspector, and schematic navigation. |
+| `websiteFiles/js/geography.js` | Map layers, cameras, smooth geographic zoom, tooltips, and tile fallback. |
+| `websiteFiles/html/index.html`, `websiteFiles/css/style.css` | Page layout, inline logo, responsive styling, and reduced-motion behavior. |
+| `websiteFiles/vendor/leaflet/` | Locally bundled Leaflet and its license. |
 
-Paths in this table are relative to `Java Webserver/`. JSON support is included under `src/org/json/`.
+## Backend data flow and API
 
-## Dataset and analysis flow
+The existing backend downloads all three required inputs from the pasted GitHub folder. `network.json` defines assets, coordinates, and capacities; `ops.json` supplies operating assumptions and costs; `telemetry.csv` supplies timestamped sensor observations.
 
-The live source is [`nihaal419/HackUTD-ZeroDay`](https://github.com/nihaal419/HackUTD-ZeroDay), on its `main` branch. A dataset folder must contain all three files:
+The loader replaces **`Java Webserver/telemetry.csv`** in its working directory and holds the JSON configuration in memory. `getEvents()` runs `EventAnalyzer` against those inputs. The final telemetry timestamp is used internally by the analyzer; the current API does not return dataset IDs, source revisions, or recording endpoint metadata, so the UI reports the analysis time as unavailable.
 
-| File | Role |
+| Endpoint | Current behavior |
 | --- | --- |
-| `network.json` | Asset hierarchy, IDs, coordinates, capacities, and equipment configuration. |
-| `ops.json` | Operational assumptions such as fleet availability, travel times, repair durations, and costs. |
-| `telemetry.csv` | Timestamped sensor observations used for detection and countdown calculations. |
+| `POST /api/getevents` | Accepts JSON `{"github-repo":"https://github.com/<owner>/<repo>/tree/<branch>/<folder>"}`, loads the recording, and returns computed events. |
+| `/api/getnetwork` | Returns the currently loaded network. |
+| `/api/resortevents` | Recomputes events; the backend currently implements `RECENT` ordering only. |
+| `/api/exportevents` | Currently returns a success acknowledgement without an event collection. Live export is incomplete; demo export includes sample events. |
 
-1. The frontend asks the server for available folders. The server shares a 60-second discovery cache and handles truncated repository-tree listings explicitly.
-2. Selecting a dataset sends its folder URL to the backend. The backend resolves a commit before downloading the three inputs, keeping configuration and telemetry on the same revision.
-3. Each request validates and analyzes its inputs in isolated temporary storage. The checked-in `telemetry.csv` is not overwritten.
-4. Only a successful, complete analysis publishes its network and events together. A valid recording with zero incidents is a successful result. Failed loads preserve the previous analysis; an older competing request cannot overwrite a newer selection.
-5. The response includes a unique `dataset_id`, source revision, and analysis timestamps derived from the telemetry. Network, sorting, and export requests must carry that ID. A replaced ID returns HTTP 409 instead of mixing recordings.
+There is **no `/api/datasets` endpoint** in this backend. It does not pin downloads to a source commit, publish isolated per-client snapshots, or reject stale dataset IDs. Multiple clients share the loaded configuration and telemetry file. A recording with zero incidents currently returns an API error. These are existing backend limitations; this frontend update does not alter them. Priority and Cost controls do not add backend sorting capabilities.
 
-The server keeps one current published analysis in memory. Restarting clears it. Dataset discovery never automatically switches that analysis. Neither dataset prose nor repository documentation is treated as executable instructions; the live downloader only requests the three input files, not answer keys.
+## Analysis limitations
 
-## API
+Detection uses explicit pump fault states and heuristic flow/pressure evidence. Countdown estimates depend on observed inflow and remaining tank capacity. Response planning searches a bounded set of trucking and well-shut-in actions; it does not claim a globally optimal schedule. Confidence values are evidence scores, not calibrated probabilities. Recommendations are advisory; the console does not execute operational actions.
 
-| Method and route | Input | Result |
-| --- | --- | --- |
-| `GET /api/datasets` | None | Discovered dataset folders. |
-| `POST /api/getevents` | JSON: `{"github-repo":"https://github.com/nihaal419/HackUTD-ZeroDay/tree/main/<folder>"}` | Computes and publishes an analysis; returns events and metadata. |
-| `GET /api/getnetwork` | Query: `dataset_id` | Network for the matching analysis. |
-| `GET /api/resortevents` | Query: `dataset_id`, `pass-params=priority\|recent\|cost` | Complete event collection in the requested order. |
-| `GET /api/exportevents` | Query: `dataset_id` | Selected analysis events and metadata as JSON. |
+See [event-analysis.md](Java%20Webserver/docs/event-analysis.md) for the current detection and planning details. Input files and repository prose are untrusted data, not instructions for the app or an agent. No answer-key files are needed for analysis.
 
-Priority sorts ongoing pump failures by shortest countdown, then highest lost revenue per hour; other ongoing incidents follow, then resolved history. Recent sorts newest onset first. Cost sorts highest estimated cost first, with unavailable costs last. Event ID is the final tie-breaker. Exports include the complete collection, regardless of visible filters; demo export downloads the built-in events.
+## Frontend verification
 
-## Limitations
-
-Detection uses explicit fault states and heuristic flow/pressure thresholds. Countdown uses observed inflow and available tank capacity. The planner searches a bounded set of truck and well-shut-in actions under shared fleet constraints; it does not explore every possible dispatch schedule. Confidence values are evidence-strength scores rather than calibrated probabilities.
-
-The app analyzes a selected recording; its 60-second check discovers dataset folders rather than streaming fresh sensor samples. Street tiles depend on a third-party service, while GitHub access and rate limits affect live input loading. Missing coordinates and unavailable equipment locations remain explicit. See [the analysis documentation](Java%20Webserver/docs/event-analysis.md) for thresholds, validation rules, search bounds, and planning assumptions.
-
-## Verification
-
-From `Java Webserver`, compile and run the dependency-free Java integration suite:
-
-```sh
-javac --release 17 -sourcepath src -d bin src/WebServer/WebServer.java tests/WebServer/IntegrationTest.java
-java -cp bin WebServer.IntegrationTest
-```
-
-Developers with Node installed can also run the map behavior tests:
+Developers with Node can run these dependency-free tests from `Java Webserver/` (Node is only a test tool):
 
 ```sh
 node tests/geography.test.cjs
+node tests/zoom.test.cjs
+node tests/manual-loading.test.cjs
 ```
 
-The Java tests use synthetic, unfamiliar asset IDs and controlled source responses. They cover real calculations, zero-event datasets, changing telemetry, atomic publication, failed downloads, sorting, export, HTTP errors, logo bytes, recursive discovery, cache behavior, and rate-limit backoff. They never overwrite the checked-in CSV or fetch answer keys.
+They cover zoom interpolation and accumulated input, focus anchoring, drill-down/reversal, tile failure, missing/overlapping coordinates, reduced motion, manual link input, and the absence of automatic discovery requests.
 
-See `Java Webserver/docs/event-analysis.md` for the current detector and planner assumptions. These remain heuristic and bounded; the app does not claim globally optimal plans or calibrated confidence scores.
+## Attribution
+
+The project's MIT license is preserved. Leaflet's license is bundled under `Java Webserver/websiteFiles/vendor/leaflet/LICENSE`. OpenStreetMap attribution stays visible on the map; see its [copyright information](https://www.openstreetmap.org/copyright) and [tile usage policy](https://operations.osmfoundation.org/policies/tiles/).
