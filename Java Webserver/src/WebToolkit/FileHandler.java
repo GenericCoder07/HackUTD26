@@ -1,67 +1,38 @@
 package WebToolkit;
-
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.HashMap;
-
-import javax.swing.JOptionPane;
-
 import com.sun.net.httpserver.HttpExchange;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
 
-public class FileHandler implements Handler
-{
-	public static final FileHandler NOTFOUND = new FileHandler(new File("websiteFiles/errorPages/notFound.html"));
-	
-	private HashMap<String, String> endpointContentTypes;
-	{
-		endpointContentTypes = new HashMap<>();
-		endpointContentTypes.put(".css", "text/css");
-		endpointContentTypes.put(".js", "text/javascript");
-		endpointContentTypes.put(".html", "text/html");
-	}
-	
-	private File file;
-	public FileHandler(File linkedFile)
-	{
-		file = linkedFile;
-	}
-	
-	public void handle(HttpExchange exchange) throws IOException
-	{
-		System.out.println("|---- Got FileHandler request [" + exchange.getRequestURI().getPath() + "] sending file [" + file.getPath() + "]");
-		
-		StringBuilder builder = new StringBuilder();
-		try (BufferedReader contentReader = new BufferedReader(new FileReader(file))) 
-		{
-			String line;
-			while ((line = contentReader.readLine()) != null)
-				builder.append(line).append("\n");
-		}
-		catch(IOException e) {showError("IOException", "Error when reading file /" + file.getName() + " - \"" + e.getMessage() + "\"");}
-
-		String content = builder.toString();
-		
-		String fileType = file.getName().substring(file.getName().indexOf("."));
-		
-		if(endpointContentTypes.get(fileType) != null)
-			exchange.getResponseHeaders().set("Content-Type", endpointContentTypes.get(fileType) + "; charset=UTF-8");
-		exchange.getResponseHeaders().set("Cache-Control", "no-store");
-		
-		exchange.sendResponseHeaders(200, content.getBytes().length);
-
-		try (OutputStream os = exchange.getResponseBody()) 
-		{
-			os.write(content.getBytes());
-			os.close();
-		}
-		catch(IOException e) {showError("IOException", "Error when outputing response to file request /" + file.getName() + " - \"" + e.getMessage() + "\"");}
-	}
-	
-	public static void showError(String title, String message)
-	{
-		JOptionPane.showMessageDialog(null, message, title, JOptionPane.ERROR_MESSAGE);
-	}
+public class FileHandler implements Handler {
+    private final Path file;
+    private static final Map<String,String> TYPES = Map.ofEntries(
+        Map.entry("css", "text/css; charset=UTF-8"), Map.entry("js", "text/javascript; charset=UTF-8"),
+        Map.entry("html", "text/html; charset=UTF-8"), Map.entry("svg", "image/svg+xml"),
+        Map.entry("png", "image/png"), Map.entry("ico", "image/x-icon"), Map.entry("json", "application/json"), Map.entry("map", "application/json"));
+    public FileHandler(File linkedFile) { file = linkedFile.toPath(); }
+    public void handle(HttpExchange exchange) throws IOException {
+        if (!exchange.getRequestMethod().equals("GET") && !exchange.getRequestMethod().equals("HEAD")) {
+            exchange.getResponseHeaders().set("Allow", "GET, HEAD"); sendError(exchange, 405, "Method not allowed"); return;
+        }
+        if (!Files.isRegularFile(file)) { sendError(exchange, 404, "File not found"); return; }
+        byte[] bytes = Files.readAllBytes(file);
+        String name = file.getFileName().toString();
+        String extension = name.substring(name.lastIndexOf('.') + 1).toLowerCase(java.util.Locale.ROOT);
+        exchange.getResponseHeaders().set("Content-Type", TYPES.getOrDefault(extension, "application/octet-stream"));
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+        exchange.getResponseHeaders().set("Content-Length", String.valueOf(bytes.length));
+        exchange.sendResponseHeaders(200, exchange.getRequestMethod().equals("HEAD") ? -1 : bytes.length);
+        try (var out = exchange.getResponseBody()) { if (!exchange.getRequestMethod().equals("HEAD")) out.write(bytes); }
+    }
+    public static void sendError(HttpExchange exchange, int status, String message) throws IOException {
+        byte[] bytes = message.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=UTF-8");
+        exchange.sendResponseHeaders(status, exchange.getRequestMethod().equals("HEAD") ? -1 : bytes.length);
+        try (var out = exchange.getResponseBody()) { if (!exchange.getRequestMethod().equals("HEAD")) out.write(bytes); }
+    }
 }

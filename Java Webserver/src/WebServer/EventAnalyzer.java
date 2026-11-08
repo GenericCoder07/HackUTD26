@@ -36,6 +36,9 @@ public final class EventAnalyzer
 	private static final int INFLOW = 0, LEVEL = 1, STATUS = 2, FLOW = 3,
 			DISCHARGE = 4, RECEIVED = 5, PRESSURE = 6;
 	private final JSONObject network, ops;
+	private long firstTimestamp, lastTimestamp;
+	public long firstTimestamp() { return firstTimestamp; }
+	public long lastTimestamp() { return lastTimestamp; }
 
 	public EventAnalyzer(JSONObject network, JSONObject ops)
 	{
@@ -52,6 +55,8 @@ public final class EventAnalyzer
 	{
 		List<Facility> facilities = readNetwork();
 		readTelemetry(telemetry, facilities);
+		firstTimestamp = facilities.get(0).samples.firstKey();
+		lastTimestamp = facilities.get(0).samples.lastKey();
 		List<Event> events = new ArrayList<>();
 		Map<String, List<FailurePlan>> pending = new LinkedHashMap<>();
 		for(Facility facility : facilities)
@@ -359,6 +364,7 @@ public final class EventAnalyzer
 			wells.add(new Well(well.getString("id"), water, value));
 			baseline += water; revenue += value;
 		}
+		event.lostRevenuePerHour = revenue;
 		Plan[] choices = new Plan[fleet + 1];
 		FailurePlan result = new FailurePlan(event, choices, fleet);
 		if(horizon <= 0)

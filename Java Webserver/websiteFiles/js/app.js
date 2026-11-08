@@ -2,22 +2,21 @@
 /* CONFIGURATION — dataset metadata is separate from analysis results. */
 const DATA_SOURCE = { owner: 'nihaal419', repo: 'HackUTD-ZeroDay', ref: 'main' };
 const PREFERRED_DATASET = 'history/snapshot_2026-10-08T1200';
-const REQUIRED_FILES = ['network.json', 'ops.json', 'telemetry.csv'];
 const DEMO_MODE = new URLSearchParams(location.search).get('mode') === 'demo';
 const $ = id => document.getElementById(id);
 const finite = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const idOf = value => value == null ? null : String(value);
 const encodedPath = path => path.split('/').map(encodeURIComponent).join('/');
 const folderUrl = path => `https://github.com/${DATA_SOURCE.owner}/${DATA_SOURCE.repo}/tree/${encodeURIComponent(DATA_SOURCE.ref)}/${encodedPath(path)}`;
-const githubUrl = path => `https://api.github.com/repos/${DATA_SOURCE.owner}/${DATA_SOURCE.repo}/contents/${encodedPath(path)}?ref=${encodeURIComponent(DATA_SOURCE.ref)}`;
 
 /* LIVE API ADAPTER — provisional wire contracts live only here. */
 const API = {
   async request(path, options = {}) {
     const response = await fetch(path, { ...options, headers: { Accept: 'application/json', ...options.headers } });
-    if (!response.ok) throw new Error(`Request failed (HTTP ${response.status}). Check the backend route and retry.`);
+
     let data;
     try { data = await response.json(); } catch { throw new Error('Backend did not return JSON. Check the API implementation.'); }
+    if (!response.ok) throw new Error(data['response-text'] ?? `Request failed (HTTP ${response.status}).`);
     this.checkMetadata(data);
     return data;
   },
@@ -40,7 +39,8 @@ const API = {
     return {
       events: normalized,
       asOf: timestamp(data?.as_of_unix, data?.as_of_ts),
-      datasetId: !Array.isArray(data) ? data?.dataset_id ?? null : null
+      datasetId: !Array.isArray(data) ? data?.dataset_id ?? null : null,
+      revision: data?.source_revision ?? null
     };
   },
   async analyzeDataset(url) {
@@ -49,52 +49,19 @@ const API = {
     }));
   },
   async fetchNetwork(context) {
-    // context.folderUrl / context.datasetId are available for future contract alignment.
-    return normalizeNetwork(await this.request('/api/getnetwork'));
+    return normalizeNetwork(await this.request(`/api/getnetwork?dataset_id=${encodeURIComponent(context.datasetId)}`));
   },
   async sortEvents(mode, context) {
-    return this.eventResult(await this.request(`/api/resortevents?pass-params=${encodeURIComponent(mode)}`));
+    return this.eventResult(await this.request(`/api/resortevents?pass-params=${encodeURIComponent(mode)}&dataset_id=${encodeURIComponent(context.datasetId)}`));
   },
   async exportEvents(context) {
-    const data = await this.request('/api/exportevents');
-    const raw = typeof data === 'string' ? data : data?.url;
-    if (typeof raw !== 'string' || !raw.trim()) throw new Error('Export response must contain a URL.');
-    const url = new URL(raw, location.origin);
-    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Export URL must use HTTP or HTTPS.');
-    return url.href;
+    return this.request(`/api/exportevents?dataset_id=${encodeURIComponent(context.datasetId)}`);
   },
-  async directory(path) {
-    const response = await fetch(githubUrl(path), { headers: { Accept: 'application/vnd.github+json' } });
-    if (!response.ok) {
-      const limited = response.status === 403 || response.status === 429;
-      throw new Error(limited ? 'GitHub discovery is rate limited or blocked. Retry later or enter a folder manually.' : `GitHub folder access failed (HTTP ${response.status}).`);
-    }
-    const entries = await response.json();
-    if (!Array.isArray(entries)) throw new Error('GitHub did not return a directory listing.');
-    return entries;
-  },
-  async validateFolder(path) {
-    const entries = await this.directory(path);
-    return REQUIRED_FILES.every(name => entries.some(entry => entry.type === 'file' && entry.name === name));
-  },
+  async validateFolder() { return null; },
   async discoverDatasets() {
-    const root = await this.directory('');
-    const directories = root.filter(entry => entry.type === 'dir');
-    const history = directories.find(entry => entry.path === 'history');
-    const historyEntries = history ? await this.directory('history') : [];
-    const children = historyEntries.filter(entry => entry.type === 'dir');
-    const candidates = [...directories, ...children];
-    // Bounded concurrency avoids bursting GitHub's unauthenticated API.
-    const choices = []; let cursor = 0; const failures = [];
-    await Promise.all(Array.from({ length: Math.min(3, candidates.length) }, async () => {
-      while (cursor < candidates.length) {
-        const entry = candidates[cursor++];
-        try { if (entry.path === 'history' ? REQUIRED_FILES.every(name => historyEntries.some(file => file.type === 'file' && file.name === name)) : await this.validateFolder(entry.path)) choices.push({ path: entry.path, url: folderUrl(entry.path), group: entry.path === 'history' || entry.path.startsWith('history/') ? 'Practice' : 'Judging' }); }
-        catch (error) { failures.push(error.message); }
-      }
-    }));
-    if (failures.length) throw new Error(`Dataset discovery incomplete. ${failures[0]} Cached choices have been kept.`);
-    return choices.sort((a, b) => a.path.localeCompare(b.path));
+    const data = await this.request('/api/datasets');
+    if (!Array.isArray(data.datasets)) throw new Error('Dataset discovery returned an invalid list.');
+    return data.datasets;
   }
 };
 
@@ -136,8 +103,8 @@ const DEMO_NETWORK = {
   defaults: { tank_limits_pct: { shutdown: 95 } },
   systems: [
     {
-      id: 'north-hub', name: 'North Hub', facilities: [{
-        id: 'north-pad', name: 'North Pad',
+      id: 'north-hub', name: 'North Hub', center: [31.85, -102.3], truck_yard: [31.80, -102.40], disposal_site: { id: 'north-disposal', lat: 31.87, lon: -102.295 }, facilities: [{
+        id: 'north-pad', name: 'North Pad', lat: 31.912, lon: -102.34,
         tank: { id: 'north-tank-1', capacity_bbl: 12000, start_level_pct: 63 },
         pump: { id: 'north-pump-a', max_flow_bpd: 18000 },
         pipeline: { id: 'north-pipeline-1', max_pressure_psi: 950 },
@@ -145,8 +112,8 @@ const DEMO_NETWORK = {
       }]
     },
     {
-      id: 'south-hub', name: 'South Hub', facilities: [{
-        id: 'south-pad', name: 'South Pad',
+      id: 'south-hub', name: 'South Hub', center: [31.4, -102.8], truck_yard: [31.35, -102.9], disposal_site: { id: 'south-disposal', lat: 31.41, lon: -102.8 }, facilities: [{
+        id: 'south-pad', name: 'South Pad', lat: 31.44, lon: -102.85,
         tank: { id: 'south-tank-1', capacity_bbl: 9000, start_level_pct: 48 },
         pump: { id: 'south-pump-a', max_flow_bpd: 14000 },
         pipeline: { id: 'south-pipeline-1', max_pressure_psi: 800 },
@@ -167,14 +134,14 @@ const DEMO_API = {
     return API.eventResult({ events: DEMO_EVENTS, as_of_unix: 1791536400, dataset_id: url.split('/').pop() });
   },
   async fetchNetwork() { return normalizeNetwork(DEMO_NETWORK); },
-  async sortEvents(mode) {
+  async sortEvents(mode, context) {
     const events = DEMO_EVENTS.map(event => ({ ...event }));
     if (mode === 'recent') events.sort((a, b) => b.onset_unix - a.onset_unix);
     if (mode === 'cost') events.sort((a, b) => b.est_cost - a.est_cost);
     if (mode === 'priority') events.sort((a, b) => Number(b.status === 'ongoing') - Number(a.status === 'ongoing') || b.confidence - a.confidence);
-    return API.eventResult({ events, as_of_unix: 1791536400, dataset_id: 'watchpot-demo' });
+    return API.eventResult({ events, as_of_unix: 1791536400, dataset_id: context.datasetId });
   },
-  async exportEvents() { return 'https://example.com/watchpot-demo-events.json'; },
+  async exportEvents(context) { return { events: DEMO_EVENTS, dataset_id: context.datasetId, as_of_unix: 1791536400, mode: 'demo' }; },
   async directory() { return []; }
 };
 const ACTIVE_API = DEMO_MODE ? DEMO_API : API;
@@ -233,7 +200,7 @@ function normalizeNetwork(raw) {
 const state = {
   choices: [], selectedFolder: null, loaded: null, network: null, events: [], orderedIds: [],
   status: 'ongoing', sort: 'priority', confirmedSort: null, scope: 'network', systemId: null,
-  facilityId: null, assetId: null, eventId: null, viewports: new Map(), bounds: null,
+  facilityId: null, assetId: null, eventId: null, viewports: new Map(), facilityFits: new Map(), bounds: null,
   loading: false, datasetError: null, networkError: null, sortError: null,
   datasetGeneration: 0, sortGeneration: 0, pendingDataset: null, datasetTask: null, sortTask: null, exportGeneration: 0
 };
@@ -316,13 +283,16 @@ let discovering = false;
 async function discover() {
   if (discovering) return;
   discovering = true; $('refresh').disabled = true;
+  const previousPaths = new Set(state.choices.map(choice => choice.path));
   $('discovery-status').className = '';
   $('discovery-status').textContent = 'Refreshing dataset choices…';
   try {
     const choices = await ACTIVE_API.discoverDatasets();
     state.choices = choices;
     if (state.selectedFolder && !choices.some(choice => choice.path === state.selectedFolder.path)) state.choices.push(state.selectedFolder);
-    renderDatasets(); $('discovery-status').textContent = choices.length ? '' : 'No eligible datasets found. Enter a folder manually.';
+    renderDatasets();
+    const added = state.loaded ? choices.filter(choice => !previousPaths.has(choice.path)).length : 0;
+    $('discovery-status').textContent = added ? `${added} new dataset${added === 1 ? '' : 's'} available. Choose a recording to analyze.` : choices.length ? 'Datasets checked · auto-check every 60s' : 'No eligible datasets found. Enter a folder manually.';
     if (!state.selectedFolder && choices.length) selectDataset(choices.find(choice => choice.path === PREFERRED_DATASET) ?? choices[0]);
     else if (!choices.length && !state.loaded) $('load-status').textContent = 'No recording selected.';
   } catch (error) {
@@ -355,7 +325,7 @@ async function processDatasets() {
     try {
       const result = await ACTIVE_API.analyzeDataset(choice.url);
       if (generation !== state.datasetGeneration) continue;
-      const context = { folderUrl: choice.url, datasetId: result.datasetId, path: choice.path, asOf: result.asOf };
+      const context = { folderUrl: choice.url, datasetId: result.datasetId, path: choice.path, asOf: result.asOf, revision: result.revision };
       let network = null, networkError = null;
       try { network = await ACTIVE_API.fetchNetwork(context); } catch (error) { networkError = error.message; }
       if (generation !== state.datasetGeneration) continue;
@@ -372,7 +342,7 @@ async function processDatasets() {
       state.events = sorted.events; state.orderedIds = sorted.events.map(event => event.event_id);
       state.confirmedSort = confirmedSort; state.sortError = sortError;
       state.scope = 'network'; state.systemId = state.facilityId = state.assetId = state.eventId = null;
-      state.viewports.clear(); state.loading = false; state.datasetError = null;
+      state.viewports.clear(); state.facilityFits.clear(); GeoMap.reset(); state.loading = false; state.datasetError = null;
       renderAll();
     } catch (error) {
       if (generation !== state.datasetGeneration) continue;
@@ -433,6 +403,7 @@ function renderLoadStatus() {
   } else if (state.loaded) status.textContent = `Recording: ${state.loaded.path}`;
   $('analysis-time').textContent = state.loaded?.asOf != null ? dateText(state.loaded.asOf) : 'Analysis time unavailable';
   $('export').disabled = state.loading || !!state.datasetError || !state.loaded;
+  $('diagram-caption-kind').textContent = state.scope === 'facility' ? 'Equipment schematic · not to scale' : 'Geographic positions · indicative connections';
   $('diagram-title').textContent = state.scope === 'network' ? 'Network overview' : state.scope === 'system' ? `${state.systemId} · facilities` : `${state.facilityId} · equipment`;
 }
 function renderSort() {
@@ -586,44 +557,20 @@ function renderDiagram() {
   const viewport = $('viewport'); viewport.replaceChildren(); $('diagram-message').replaceChildren();
   state.bounds = null;
   if (!state.network) {
+    GeoMap.hide();
     const message = $('diagram-message'); message.append(el('strong', '', state.networkError ? 'Schematic unavailable' : 'Choose a recording to explore the network'), el('p', '', state.networkError ?? 'Systems and equipment will appear after backend analysis.'));
     if (state.networkError) message.append(button('Retry network', retryNetwork)); return;
   }
-  if (state.scope === 'network') layoutNetwork();
-  else if (state.scope === 'system') layoutSystem();
-  else layoutFacility();
+  if (state.scope !== 'facility') { GeoMap.render(); return; }
+  GeoMap.hide(); layoutFacility();
   if (!state.bounds) return;
   if (state.viewports.has(viewKey())) applyTransform(); else fitDiagram();
-}
-function layoutNetwork() {
-  const systems = state.network.systems;
-  if (!systems.length) { $('diagram-message').textContent = 'No systems supplied in this network.'; return; }
-  const rect = $('diagram-surface').getBoundingClientRect();
-  const columns = Math.max(1, Math.min(systems.length, Math.round(Math.sqrt(systems.length * Math.max(.6, rect.width / Math.max(1, rect.height))))));
-  const rows = Math.ceil(systems.length / columns);
-  systems.forEach((system, index) => {
-    const count = ongoing(state.events.filter(event => event.system_id === system.id)).length;
-    nodeCard({ id: system.id, kind: 'system', x: 120 + (index % columns) * 230, y: 105 + Math.floor(index / columns) * 205, title: system.id, subtitle: `${system.facilities.length} facilities · ${count} ongoing`, alert: count, width: 198, onClick: () => navigate('system', system.id) });
-  });
-  state.bounds = { x: 0, y: 0, width: columns * 230 + 10, height: rows * 205 + 10 };
 }
 function facilityMetrics(facility) {
   const events = ongoing(state.events.filter(event => event.facility_id === facility.id));
   const level = events.find(event => event.level_pct !== null)?.level_pct ?? null;
   const failure = events.find(event => failureCountdown(event));
   return { events, level, extra: [level !== null ? `${numberFormat.format(level)}% tank` : '', failure ? `${failureCountdown(failure)} to limit` : ''].filter(Boolean).join(' · ') };
-}
-function layoutSystem() {
-  const system = systemById(); if (!system) { $('diagram-message').textContent = 'The selected system is not present in the network response.'; return; }
-  const facilities = system.facilities, height = Math.max(230, facilities.length * 210), centerY = height / 2;
-  facilities.forEach((facility, index) => { if (system.disposal_site) flow(228, 105 + index * 210, 505, centerY, true); });
-  facilities.forEach((facility, index) => {
-    const metrics = facilityMetrics(facility);
-    nodeCard({ id: facility.id, kind: 'facility', x: 130, y: 105 + index * 210, width: 196, title: facility.id, subtitle: `${facility.wells.length} wells · ${metrics.events.length} ongoing`, alert: metrics.events.length, extra: metrics.extra || null, onClick: () => navigate('facility', system.id, facility.id) });
-  });
-  if (system.disposal_site) nodeCard({ id: system.disposal_site.id, kind: 'disposal', x: 600, y: centerY, title: system.disposal_site.id, subtitle: 'Shared disposal site', width: 190, onClick: () => { state.assetId = system.disposal_site.id; state.eventId = null; renderInspector(); renderDiagram(); openInspector(); } });
-  else $('diagram-message').textContent = 'No disposal site supplied; no disposal connections drawn.';
-  state.bounds = { x: 0, y: 0, width: 720, height: height + 15 };
 }
 function layoutFacility() {
   const member = facilityById(); if (!member) { $('diagram-message').textContent = 'The selected facility is not present in the network response. Events remain available.'; return; }
@@ -649,12 +596,14 @@ function layoutFacility() {
 
 /* NAVIGATION, EXPORT, AND VIEWPORT INTERACTIONS */
 function navigate(scope, systemId = null, facilityId = null) {
+  GeoMap.remember();
   state.scope = scope; state.systemId = systemId; state.facilityId = facilityId; state.assetId = state.eventId = null;
   clearInvisibleSelection(); renderAll();
 }
 function selectEvent(id) {
   const event = state.events.find(item => item.event_id === id); if (!event) return;
   const member = facilityById(event.facility_id);
+  GeoMap.remember();
   state.eventId = id; state.assetId = event.asset_id; state.systemId = member?.system.id ?? event.system_id; state.facilityId = event.facility_id;
   state.scope = event.facility_id ? 'facility' : event.system_id ? 'system' : 'network';
   if (state.status !== 'all' && state.status !== event.status) state.status = 'all';
@@ -671,15 +620,19 @@ async function retryNetwork() {
   catch (error) { if (generation !== state.datasetGeneration) return; state.networkError = error.message; }
   renderDiagram(); renderInspector();
 }
+let exportBlobUrl = null;
 async function exportEvents() {
   if (state.loading || state.datasetError || !state.loaded) return;
   const generation = ++state.exportGeneration, datasetGeneration = state.datasetGeneration;
   $('export').disabled = true; $('export-status').textContent = 'Preparing export link…';
   try {
-    const url = await ACTIVE_API.exportEvents(state.loaded);
+    const data = await ACTIVE_API.exportEvents(state.loaded);
     if (generation !== state.exportGeneration || datasetGeneration !== state.datasetGeneration) return;
-    const link = el('a', '', `Open events export · ${state.loaded.path}`); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.download = 'events.json';
-    $('export-status').replaceChildren(document.createTextNode('Export link ready.'), link);
+    if (!Array.isArray(data.events) || data.dataset_id !== state.loaded.datasetId) throw new Error('Export does not match the selected dataset. Retry analysis.');
+    if (exportBlobUrl) URL.revokeObjectURL(exportBlobUrl);
+    exportBlobUrl = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    const link = el('a', '', `Download events · ${state.loaded.path}`); link.href = exportBlobUrl; link.download = 'watchpot-events.json';
+    $('export-status').replaceChildren(document.createTextNode('Export ready.'), link); link.click();
   } catch (error) {
     if (generation !== state.exportGeneration || datasetGeneration !== state.datasetGeneration) return;
     $('export-status').replaceChildren(document.createTextNode(`Export failed: ${error.message}`), button('Retry export', exportEvents, 'retry'));
@@ -695,19 +648,22 @@ function applyTransform() {
   $('viewport').querySelectorAll('.node-sub').forEach(node => node.style.fontSize = `${Math.min(18, Math.max(10, 11 / value.scale))}px`);
 }
 function fitDiagram() {
+  if (state.network && state.scope !== 'facility') { GeoMap.fit(); return; }
   if (!state.bounds) return;
   const rect = $('diagram-surface').getBoundingClientRect(), bounds = state.bounds;
   if (!rect.width || !rect.height) return;
   // Fit is allowed below the interactive 0.4 zoom floor so large networks remain visible.
   const scale = Math.min(1.15, Math.max(.08, Math.min((rect.width - 40) / bounds.width, (rect.height - 90) / bounds.height)));
+  state.facilityFits.set(viewKey(), scale);
   state.viewports.set(viewKey(), { x: (rect.width - bounds.width * scale) / 2 - bounds.x * scale, y: (rect.height - 45 - bounds.height * scale) / 2 - bounds.y * scale, scale }); applyTransform();
 }
 function zoomAt(factor, x, y) {
   if (!state.bounds) return;
   const value = transform(), minimum = .08, scale = Math.max(minimum, Math.min(2.5, value.scale * factor)), ratio = scale / value.scale;
+  if (state.scope === 'facility' && value.scale * factor < (state.facilityFits.get(viewKey()) ?? value.scale) * .65) { GeoMap.leaveFacility(); return; }
   value.x = x - (x - value.x) * ratio; value.y = y - (y - value.y) * ratio; value.scale = scale; applyTransform();
 }
-function zoomCenter(factor) { const rect = $('diagram-surface').getBoundingClientRect(); zoomAt(factor, rect.width / 2, rect.height / 2); }
+function zoomCenter(factor) { if (state.scope !== 'facility' && state.network) { GeoMap.zoom(factor > 1 ? 1 : -1); return; } const rect = $('diagram-surface').getBoundingClientRect(); zoomAt(factor, rect.width / 2, rect.height / 2); }
 function revealSelectedAsset() {
   const node = [...$('viewport').querySelectorAll('[data-node-id]')].find(item => item.getAttribute('data-node-id') === state.assetId); if (!node) return;
   const rect = node.getBoundingClientRect(), surface = $('diagram-surface').getBoundingClientRect(), value = transform();
@@ -721,8 +677,9 @@ function pointerDistance() { const points = [...pointers.values()]; return Math.
 function pointerCenter() { const points = [...pointers.values()]; return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 }; }
 function setupViewport() {
   const surface = $('diagram-surface');
-  surface.addEventListener('wheel', event => { if (!state.bounds) return; event.preventDefault(); const rect = surface.getBoundingClientRect(); const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1); zoomAt(Math.exp(-Math.max(-150, Math.min(150, delta)) * .006), event.clientX - rect.left, event.clientY - rect.top); }, { passive: false });
+  surface.addEventListener('wheel', event => { if (state.scope !== 'facility') return; if (!state.bounds) return; event.preventDefault(); const rect = surface.getBoundingClientRect(); const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1); zoomAt(Math.exp(-Math.max(-150, Math.min(150, delta)) * .006), event.clientX - rect.left, event.clientY - rect.top); }, { passive: false });
   surface.addEventListener('pointerdown', event => {
+    if (state.scope !== 'facility') return;
     if (event.target.closest('.zoom-controls') || event.target.closest('.diagram-message') || event.button !== 0) return;
     const rect = surface.getBoundingClientRect(); pointers.set(event.pointerId, { x: event.clientX - rect.left, y: event.clientY - rect.top });
     const point = pointers.get(event.pointerId); gesture = { start: point, previous: point, moved: false, distance: pointers.size === 2 ? pointerDistance() : null, center: pointers.size === 2 ? pointerCenter() : null };
@@ -734,6 +691,7 @@ function setupViewport() {
     if (pointers.size === 2) {
       const distance = pointerDistance(), center = pointerCenter();
       if (gesture.distance > 0) zoomAt(distance / gesture.distance, gesture.center.x, gesture.center.y);
+      if (state.scope !== 'facility') { pointers.clear(); gesture = null; return; }
       const value = transform(); if (gesture.center) { value.x += center.x - gesture.center.x; value.y += center.y - gesture.center.y; }
       gesture.distance = distance; gesture.center = center; gesture.moved = true; applyTransform();
     } else {
@@ -751,7 +709,7 @@ function setupViewport() {
   }
   surface.addEventListener('pointerup', endPointer); surface.addEventListener('pointercancel', endPointer);
   let resizeFrame;
-  new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (!state.bounds) return; if (state.scope === 'network') { state.viewports.delete(viewKey()); renderDiagram(); } else { fitDiagram(); revealSelectedAsset(); } }); }).observe(surface);
+  new ResizeObserver(() => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(() => { if (state.scope !== 'facility') { GeoMap.resize(); return; } if (!state.bounds) return; fitDiagram(); revealSelectedAsset(); }); }).observe(surface);
 }
 
 /* INITIALIZATION */
@@ -770,3 +728,6 @@ document.querySelectorAll('[data-tab]').forEach(node => { if (node.tagName !== '
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { state.eventId = state.assetId = null; renderEvents(); renderInspector(); renderDiagram(); } });
 if (matchMedia('(max-width:1099px)').matches) { $('inspector').classList.add('collapsed'); $('inspector-toggle').setAttribute('aria-expanded', 'false'); }
 setupViewport(); renderAll(); discover();
+
+setInterval(() => { if (!document.hidden) discover(); }, 60_000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) discover(); });

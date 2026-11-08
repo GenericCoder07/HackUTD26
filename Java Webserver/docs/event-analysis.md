@@ -1,16 +1,10 @@
 # Event analysis
 
-`WebServer.getEvents()` reads the currently loaded `networkJSON`, `opsJSON`, and
-`telemetry.csv` in the Java process's working directory. It delegates to
-`new EventAnalyzer(networkJSON, opsJSON).analyze(Path.of("telemetry.csv"))`.
-The analyzer does not fetch data, modify the CSV, read an answer key, or use the
-computer's clock. The final telemetry timestamp is the analysis time.
+`DatasetService` resolves the dataset source revision, downloads `network.json`, `ops.json`, and `telemetry.csv` from that revision, then calls `EventAnalyzer.analyze` on an isolated temporary CSV. It publishes the network, events, source revision, and telemetry-derived start/end timestamps together only after success. The temporary file is removed afterwards; the repository CSV is untouched.
 
-The method returns all detected ongoing and resolved incidents, ordered by the
-existing `Event.sort` (currently most recent onset first). No incidents means an
-empty array. Unloaded JSON, invalid configuration, unreadable files, and malformed
-or incomplete telemetry cause `getEvents()` to log a diagnostic and return `null`.
-The analyzer itself throws an exception so callers/tests can inspect the cause.
+No events is a valid empty result. Invalid configuration, malformed JSON/CSV, or missing data produces a structured HTTP error while preserving the previous analysis. Superseded analyses cannot publish. Reads require the matching dataset ID; a replaced ID returns HTTP 409.
+
+The HTTP layer supplies complete sorted results for priority, recent, and cost and exports JSON. Priority places ongoing pump failures first by countdown, breaking ties by facility lost revenue per hour; other ongoing incidents follow, then resolved history. The analyzer's detection and planning rules below are unchanged. No documentation or answer-key file is downloaded by the live source.
 
 ## Detection
 
@@ -103,25 +97,13 @@ values. Extra well/unknown sensor series are not used for detection.
 is an array. Timestamps use `long`, and tank level retains fractional precision.
 This replaces the previous hyphenated serialization keys.
 
-This change implements the analysis method and model. The existing HTTP handlers
-still need their response wiring: `/api/getevents` currently discards the returned
-array and treats an empty result as failure; network, sort, and export handlers
-remain separate integration work.
-
 ## Verification
 
-From the project root with a JDK on PATH:
+From `Java Webserver` with a JDK on PATH:
 
-```powershell
-javac --release 17 -cp bin -sourcepath src -d bin src/WebServer/WebServer.java src/WebServer/EventAnalyzer.java tests/WebServer/EventAnalyzerTest.java
-java -cp bin WebServer.EventAnalyzerTest
+```sh
+javac --release 17 -sourcepath src -d bin src/WebServer/WebServer.java tests/WebServer/IntegrationTest.java
+java -cp bin WebServer.IntegrationTest
 ```
 
-The dependency-free tests cover cycling/noise, fault episodes, persistent slow
-incidents, confirmed recovery, degradation transitioning to failure, stable IDs,
-2040 timestamps, countdown units, costs, shared-fleet allocation, physical plan
-replay, late trucks, insufficient water, already-shut tanks, overdue repairs,
-quoted/unordered CSV, invalid inputs, and an unloaded server. Temporary fixtures
-are removed; the real telemetry file is never overwritten. The real local
-recording was also processed with its public network/operations configuration;
-accuracy was not scored against an answer key.
+Synthetic test fixtures exercise new IDs and coordinates, telemetry-dependent incidents and countdowns, zero-event recordings, source revisions, failed inputs/downloads, competing requests, stale IDs, sorting, export, static asset bytes, and discovery/backoff behavior. The suite uses a temporary localhost server and never modifies the real CSV. Confidence remains a heuristic evidence-strength score; no answer-key accuracy claim is made.

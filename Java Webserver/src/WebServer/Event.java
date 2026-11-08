@@ -12,6 +12,7 @@ public class Event implements Comparable<Event>
 	Long endUnix;
 	double levelPCT;
 	double confidence;
+	double lostRevenuePerHour;
 	Double hoursToLimit, estimatedCost;
 	JSONArray recommendedActions = new JSONArray();
 	
