@@ -15,7 +15,7 @@ const API = {
     const response = await fetch(path, { ...options, headers: { Accept: 'application/json', ...options.headers } });
 
     let data;
-    try { data = await response.json(); } catch { throw new Error('Backend did not return JSON. Check the API implementation.'); }
+    try { data = await response.json(); } catch { throw new Error(''); }
     if (!response.ok) throw new Error(data['response-text'] ?? `Request failed (HTTP ${response.status}).`);
     this.checkMetadata(data);
     return data;
