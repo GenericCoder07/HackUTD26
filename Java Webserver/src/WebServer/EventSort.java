@@ -5,7 +5,7 @@ import java.util.function.BiFunction;
 public enum EventSort
 {
 	RECENT((A, B) -> {
-		return 0;
+		return Integer.compare(B.onsetUnix, A.onsetUnix);
 	});
 	
 	private BiFunction<Event, Event, Integer> func;

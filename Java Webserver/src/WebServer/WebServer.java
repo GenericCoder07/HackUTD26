@@ -34,22 +34,27 @@ public class WebServer
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
-				String githubRepo = getStringOrDefault(JSON, "github-repo", null);
+				if(getStringOrDefault(JSON, "response-method", null) != "POST")
+					badResponse("Method \"" + getStringOrDefault(JSON, "response-method", null) + "\" not recognised by this endpoint");
 				
+				String githubRepo = getStringOrDefault(JSON, "github-repo", null);
 				if(githubRepo == null)
 					return badResponse("GitHub Repo link not included");
 				
-				if(!loadGithub())
+				if(!loadGithub(githubRepo))
 					return badResponse("GitHub Repo link not included");
 				
-				getEvents();
+				Event[] events = getEvents();
+				
+				if(events == null || events.length == 0)
+					return badResponse("Event Get Failed");
 				
 				JSONObject ret = new JSONObject();
 				ret.put("response", 200);
 				ret.put("success", true);
 				ret.put("response-text", "Events successfully set");
 				
-				return null;
+				return ret;
 			}
 			
 		});
@@ -57,11 +62,17 @@ public class WebServer
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
-				
-				
 				String sortParam = getStringOrDefault(JSON, "sort-param", "RECENT");
+				Event.sort = EventSort.valueOf(sortParam);
 				
-				return null;
+
+				JSONObject ret = new JSONObject();
+				ret.put("response", 200);
+				ret.put("success", true);
+				ret.put("response-text", "Events successfully set");
+				
+				
+				return ret;
 			}
 			
 		});
@@ -88,8 +99,14 @@ public class WebServer
 		server.createContext("/favicon.ico", new FileHandler(new File("websiteFiles/favicon.ico")));
 	}
 
-	protected static void loadGithub()
+	public static Event[] getEvents()
 	{
+		return null;
+	}
+
+	public static boolean loadGithub(String github)
+	{
+		return false;
 	}
 
 	public static String getStringOrDefault(JSONObject JSON, String key, String defaultObject)

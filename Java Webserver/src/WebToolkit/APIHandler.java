@@ -41,7 +41,7 @@ public abstract class APIHandler implements HttpHandler
 		
 		System.out.println(object);
 		
-		object.put("")
+		object.put("request-method", exchange.getRequestMethod());
 		
 		JSONObject response = handleAPICallWrapper(object);
 		String responseString = response.toString();
