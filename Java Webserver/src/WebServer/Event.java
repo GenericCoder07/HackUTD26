@@ -9,10 +9,10 @@ public class Event implements Comparable<Event>
 	
 	String eventID, systemID, facilityID, assetID, category, status, onsetTime, endTime, evidence;
 	long onsetUnix;
+	long detectedUnix;
 	Long endUnix;
 	double levelPCT;
 	double confidence;
-	double lostRevenuePerHour;
 	Double hoursToLimit, estimatedCost;
 	JSONArray recommendedActions = new JSONArray();
 	
@@ -33,6 +33,7 @@ public class Event implements Comparable<Event>
 		event.put("status", status);
 		event.put("onset_ts", onsetTime);
 		event.put("onset_unix", onsetUnix);
+		event.put("detected_unix", detectedUnix);
 		event.put("end_ts", endTime == null ? JSONObject.NULL : endTime);
 		event.put("end_unix", endUnix == null ? JSONObject.NULL : endUnix);
 		event.put("confidence", confidence);

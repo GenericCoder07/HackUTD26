@@ -27,18 +27,13 @@ import org.json.JSONObject;
  */
 public final class EventAnalyzer
 {
-	// Heuristic noise margins, not calibrated probabilities. See docs/event-analysis.md.
-	private static final double DEGRADED_FLOW = 0.90, RECOVERED_FLOW = 0.95;
-	private static final double LEAK_LOSS = 0.07, RECOVERED_LOSS = 0.03;
-	private static final int CONFIRM_SAMPLES = 3;
+	// Evidence windows and noise floors, not calibrated probabilities.
+	private static final int SIGNAL_WINDOW = 7, BASELINE_SAMPLES = 48;
 	private static final long SAMPLE_SECONDS = 300;
 	private static final double VOLUME_MARGIN = 0.01, EPS = 1e-8;
 	private static final int INFLOW = 0, LEVEL = 1, STATUS = 2, FLOW = 3,
 			DISCHARGE = 4, RECEIVED = 5, PRESSURE = 6;
 	private final JSONObject network, ops;
-	private long firstTimestamp, lastTimestamp;
-	public long firstTimestamp() { return firstTimestamp; }
-	public long lastTimestamp() { return lastTimestamp; }
 
 	public EventAnalyzer(JSONObject network, JSONObject ops)
 	{
@@ -55,8 +50,6 @@ public final class EventAnalyzer
 	{
 		List<Facility> facilities = readNetwork();
 		readTelemetry(telemetry, facilities);
-		firstTimestamp = facilities.get(0).samples.firstKey();
-		lastTimestamp = facilities.get(0).samples.lastKey();
 		List<Event> events = new ArrayList<>();
 		Map<String, List<FailurePlan>> pending = new LinkedHashMap<>();
 		for(Facility facility : facilities)
@@ -246,30 +239,10 @@ public final class EventAnalyzer
 	private void detect(Facility f, List<Event> output)
 	{
 		Episode failure = new Episode(f, "pump_failure", f.pump, 1);
-		Episode degradation = new Episode(f, "pump_degradation", f.pump, CONFIRM_SAMPLES);
-		Episode leak = new Episode(f, "pipeline_leak", f.pipeline, CONFIRM_SAMPLES);
 		for(Sample s : f.samples.values())
-		{
-			boolean fault = s.get(STATUS) == 2;
-			failure.observe(s, fault ? 1 : -1);
-			if(fault)
-				degradation.close(s.time);
-			else if(s.get(STATUS) == 1)
-			{
-				double ratio = s.get(FLOW) / f.maxFlow;
-				boolean bad = ratio < DEGRADED_FLOW && s.get(DISCHARGE) < f.disposalPressure + 130;
-				boolean good = ratio >= RECOVERED_FLOW && s.get(DISCHARGE) >= f.disposalPressure + 135;
-				degradation.observe(s, bad ? 1 : good ? -1 : 0);
-			}
-			if(s.get(STATUS) == 1 && s.get(FLOW) > f.maxFlow * 0.1)
-			{
-				double loss = (s.get(FLOW) - s.get(RECEIVED)) / s.get(FLOW);
-				boolean bad = loss > LEAK_LOSS && s.get(PRESSURE) < f.disposalPressure + 30;
-				boolean good = loss < RECOVERED_LOSS && s.get(PRESSURE) >= f.disposalPressure + 35;
-				leak.observe(s, bad ? 1 : good ? -1 : 0);
-			}
-			// Stopped/failed pumps cannot establish pipeline recovery or degradation recovery.
-		}
+			failure.observe(s, s.get(STATUS) == 2 ? 1 : -1);
+		detectSlow(f, false);
+		detectSlow(f, true);
 		Sample latest = f.samples.lastEntry().getValue();
 		for(Event event : f.events)
 		{
@@ -280,6 +253,254 @@ public final class EventAnalyzer
 		}
 		output.addAll(f.events);
 	}
+
+	/** Work only with running observations: off-cycle zero flow is not a fault or recovery. */
+	private void detectSlow(Facility f, boolean leak)
+	{
+		List<Signal> all = new ArrayList<>();
+		for(Sample sample : f.samples.values())
+			if(sample.get(STATUS) == 1 && (!leak || sample.get(FLOW) > f.maxFlow * 0.1))
+				all.add(new Signal(sample.time,
+						leak ? 1 - sample.get(RECEIVED) / sample.get(FLOW) : 1 - sample.get(FLOW) / f.maxFlow,
+						f.disposalPressure + (leak ? 50 : 150) - sample.get(leak ? PRESSURE : DISCHARGE)));
+		if(all.size() < SIGNAL_WINDOW) return;
+		Noise baseline = noise(all);
+		List<Signal> segment = new ArrayList<>();
+		for(Sample sample : f.samples.values())
+		{
+			if(!leak && sample.get(STATUS) == 2)
+			{
+				detectSegment(f, segment, baseline, false, sample.time);
+				segment.clear();
+			}
+			else if(sample.get(STATUS) == 1 && (!leak || sample.get(FLOW) > f.maxFlow * 0.1))
+				segment.add(new Signal(sample.time,
+						(leak ? 1 - sample.get(RECEIVED) / sample.get(FLOW) : 1 - sample.get(FLOW) / f.maxFlow) - baseline.flowCenter,
+						f.disposalPressure + (leak ? 50 : 150) - sample.get(leak ? PRESSURE : DISCHARGE) - baseline.pressureCenter));
+		}
+		detectSegment(f, segment, baseline, leak, null);
+	}
+
+	private static Noise noise(List<Signal> points)
+	{
+		// Calibrate only against an initially near-nominal cohort. A recording starting
+		// with an obvious fault uses the physical nominal baseline rather than learning it.
+		List<Signal> initial = points.subList(0, Math.min(BASELINE_SAMPLES, points.size()));
+		double[] flows = initial.stream().mapToDouble(s -> s.flow).toArray();
+		double[] pressures = initial.stream().mapToDouble(s -> s.pressure).toArray();
+		double flowMedian = median(flows), pressureMedian = median(pressures);
+		boolean nominal = Math.abs(flowMedian) < 0.01 && Math.abs(pressureMedian) < 6;
+		double flowCenter = nominal ? trimmedMean(flows) : 0;
+		double pressureCenter = nominal ? trimmedMean(pressures) : 0;
+		double flowNoise = nominal ? mad(flows, flowMedian) : 0.006;
+		double pressureNoise = nominal ? mad(pressures, pressureMedian) : 3;
+		return new Noise(flowCenter, pressureCenter, Math.max(0.004, flowNoise), Math.max(2, pressureNoise));
+	}
+
+	private void detectSegment(Facility f, List<Signal> points, Noise noise, boolean leak, Long faultTime)
+	{
+		int confirmation = -1, searchStart = 0, windowStart = 0;
+		int badWindows = 0, healthyWindows = 0;
+		double flowThreshold = Math.max(0.008, 3 * noise.flowSigma / Math.sqrt(SIGNAL_WINDOW));
+		double pressureThreshold = Math.max(leak ? 5 : 2, 3 * noise.pressureSigma / Math.sqrt(SIGNAL_WINDOW));
+		for(int i = 0; i < points.size(); i++)
+		{
+			int from = Math.max(windowStart, i - SIGNAL_WINDOW + 1);
+			if(i - from + 1 < SIGNAL_WINDOW) continue;
+			double[] flow = new double[SIGNAL_WINDOW], pressure = new double[SIGNAL_WINDOW];
+			for(int j = 0; j < SIGNAL_WINDOW; j++)
+			{
+				flow[j] = points.get(from + j).flow;
+				pressure[j] = points.get(from + j).pressure;
+			}
+			double flowShift = median(flow), pressureShift = median(pressure);
+			boolean abnormal = flowShift > flowThreshold && pressureShift > pressureThreshold;
+			boolean healthy = flowShift < flowThreshold * 0.5 && pressureShift < pressureThreshold * 0.5;
+			badWindows = abnormal ? badWindows + 1 : 0;
+			healthyWindows = healthy ? healthyWindows + 1 : 0;
+			if(confirmation < 0 && badWindows >= 3)
+				confirmation = i;
+			else if(confirmation >= 0 && healthyWindows >= SIGNAL_WINDOW)
+			{
+				int recovery = recoveryIndex(points, confirmation, i, noise);
+				addSlowEvent(f, points, searchStart, confirmation, recovery, points.get(recovery).time, noise, leak);
+				confirmation = -1;
+				searchStart = recovery;
+				windowStart = recovery;
+				badWindows = 0; healthyWindows = 0;
+			}
+		}
+		if(confirmation >= 0)
+			addSlowEvent(f, points, searchStart, confirmation, points.size(), faultTime, noise, leak);
+	}
+
+	/** Find the abrupt return to the healthy baseline, excluding the smoothing delay. */
+	private static int recoveryIndex(List<Signal> points, int confirmation, int current, Noise noise)
+	{
+		double best = Double.POSITIVE_INFINITY;
+		int result = current;
+		long origin = points.get(confirmation).time;
+		Moments[] fault = {new Moments(), new Moments()};
+		double[] totals = {moments(points, confirmation, current + 1, origin, 0, noise).yy,
+				moments(points, confirmation, current + 1, origin, 1, noise).yy};
+		for(int cut = confirmation + 1; cut <= current - SIGNAL_WINDOW / 2; cut++)
+		{
+			double score = 0;
+			for(int channel = 0; channel < 2; channel++)
+			{
+				Signal point = points.get(cut - 1);
+				fault[channel].add((point.time - origin)/3600.0, scaled(point, channel, noise));
+				// Search the whole confirmed episode, not just the latest window:
+				// recovery confirmation can be delayed by off cycles or sensor noise.
+				score += fault[channel].fit(false).error + totals[channel] - fault[channel].yy;
+			}
+			if(score < best) { best = score; result = cut; }
+		}
+		return result;
+	}
+
+	private void addSlowEvent(Facility f, List<Signal> points, int start, int confirmation, int end,
+			Long endTime, Noise noise, boolean leak)
+	{
+		long onset = estimateOnset(points, start, confirmation, end, noise, leak);
+		Event event = new Event();
+		event.systemID = f.system; event.facilityID = f.id;
+		event.assetID = leak ? f.pipeline : f.pump;
+		event.category = leak ? "pipeline_leak" : "pump_degradation";
+		event.status = endTime == null ? "ongoing" : "resolved";
+		event.onsetUnix = onset; event.onsetTime = Instant.ofEpochSecond(onset).toString();
+		event.endUnix = endTime; event.endTime = endTime == null ? null : Instant.ofEpochSecond(endTime).toString();
+		event.detectedUnix = points.get(confirmation).time;
+		event.eventID = "EV-" + UUID.nameUUIDFromBytes((event.assetID + ":" + event.category + ":" + onset).getBytes(StandardCharsets.UTF_8));
+		event.confidence = 0.90;
+		event.evidence = (leak ? "Sustained receiving-flow loss and pipeline pressure reduction; onset is the first corroborated affected running observation." :
+				"Sustained reduction in running pump flow and discharge pressure; onset is estimated with a healthy-baseline/step/ramp fit.")
+				+ " Seven-running-sample medians exceed measured healthy noise for three successive windows; detection time records confirmation separately."
+				+ " Boundaries during pump-off periods cannot be observed exactly.";
+		f.events.add(event);
+	}
+
+	/** Fit a pump's healthy plateau followed by a ramp or step on the sensor time
+	 * grid. For leaks, use the first corroborated affected running observation:
+	 * an unknown initial leak magnitude prevents extrapolating its onset reliably.
+	 */
+	private static long estimateOnset(List<Signal> points, int start, int confirmation, int end, Noise noise, boolean leak)
+	{
+		if(leak)
+		{
+			// Leak loss includes an unknown initial step. Extrapolating its later
+			// slope to zero invents hours of onset history, especially across off gaps.
+			// Locate the first corroborated affected observation instead.
+			for(int i = start; i <= confirmation; i++)
+			{
+				Signal point = points.get(i);
+				if(point.flow <= noise.flowSigma || point.pressure <= Math.max(5, 2*noise.pressureSigma)) continue;
+				int through = Math.min(end, i + SIGNAL_WINDOW);
+				if(through - i < SIGNAL_WINDOW) continue;
+				double[] flows = new double[SIGNAL_WINDOW], pressures = new double[SIGNAL_WINDOW];
+				for(int j = 0; j < SIGNAL_WINDOW; j++) { flows[j] = points.get(i+j).flow; pressures[j] = points.get(i+j).pressure; }
+				if(median(flows) > Math.max(0.008, 3*noise.flowSigma/Math.sqrt(SIGNAL_WINDOW)) &&
+						median(pressures) > Math.max(5, 3*noise.pressureSigma/Math.sqrt(SIGNAL_WINDOW))) return point.time;
+			}
+			return points.get(confirmation - SIGNAL_WINDOW / 2).time;
+		}
+		long origin = points.get(start).time;
+		long latest = points.get(confirmation - SIGNAL_WINDOW / 2).time;
+		double best = Double.POSITIVE_INFINITY;
+		long onset = latest;
+		Moments[] after = {moments(points, start, end, origin, 0, noise), moments(points, start, end, origin, 1, noise)};
+		double[] beforeError = {0, 0};
+		int cursor = start;
+		for(long time = origin; time <= latest; time += SAMPLE_SECONDS)
+		{
+			while(cursor < end && points.get(cursor).time < time)
+			{
+				Signal point = points.get(cursor++);
+				for(int channel = 0; channel < 2; channel++)
+				{
+					double y = scaled(point, channel, noise);
+					after[channel].remove((point.time - origin) / 3600.0, y);
+					beforeError[channel] += y * y;
+				}
+			}
+			if(after[0].n < SIGNAL_WINDOW / 2 + 1) break;
+			double offset = (time - origin) / 3600.0;
+			for(int model = 0; model < 2; model++)
+			{
+				double error = beforeError[0] + beforeError[1];
+				for(int channel = 0; channel < 2; channel++)
+				{
+					Moments shifted = after[channel].shift(offset);
+					if(model == 0) error += shifted.rampError();
+					else error += shifted.stepError();
+				}
+				if(error < best - 1e-6 || (Math.abs(error - best) <= 1e-6 && time > onset))
+				{ best = error; onset = time; }
+			}
+		}
+		return onset;
+	}
+
+	private static Moments moments(List<Signal> points, int from, int to, double origin, int channel, Noise noise)
+	{
+		Moments result = new Moments();
+		for(int i = from; i < to; i++)
+		{
+			Signal point = points.get(i);
+			result.add((point.time - origin) / 3600.0, scaled(point, channel, noise));
+		}
+		return result;
+	}
+	private static double scaled(Signal point, int channel, Noise noise)
+	{
+		return channel == 0 ? point.flow / noise.flowSigma : point.pressure / noise.pressureSigma;
+	}
+	private static double median(double[] input)
+	{
+		double[] values = input.clone();
+		Arrays.sort(values);
+		return (values[(values.length - 1) / 2] + values[values.length / 2]) / 2;
+	}
+	private static double trimmedMean(double[] input)
+	{
+		double[] values = input.clone();
+		Arrays.sort(values);
+		int trim = values.length / 10;
+		return Arrays.stream(values, trim, values.length - trim).average().orElse(0);
+	}
+	private static double mad(double[] values, double center)
+	{
+		return 1.4826 * median(Arrays.stream(values).map(v -> Math.abs(v - center)).toArray());
+	}
+	private static final class Moments
+	{
+		int n;
+		double x, xx, y, yy, xy;
+		void add(double a, double b) { n++; x += a; xx += a*a; y += b; yy += b*b; xy += a*b; }
+		void remove(double a, double b) { n--; x -= a; xx -= a*a; y -= b; yy -= b*b; xy -= a*b; }
+		Moments shift(double offset)
+		{
+			Moments m = new Moments();
+			m.n = n; m.x = x - n*offset; m.xx = xx - 2*offset*x + n*offset*offset;
+			m.y = y; m.yy = yy; m.xy = xy - offset*y;
+			return m;
+		}
+		double rampError() { return Math.max(0, yy - (xx > EPS && xy > 0 ? xy*xy/xx : 0)); }
+		double stepError() { return Math.max(0, yy - (n > 0 && y > 0 ? y*y/n : 0)); }
+		Fit fit(boolean nonnegative)
+		{
+			if(n == 0) return new Fit(0);
+			double denominator = xx - x*x/n;
+			double slope = denominator > EPS ? (xy - x*y/n)/denominator : 0;
+			double intercept = (y - slope*x)/n;
+			if(nonnegative && (slope < 0 || intercept < 0))
+				return new Fit(Math.min(stepError(), rampError()));
+			return new Fit(Math.max(0, yy - intercept*y - slope*xy));
+		}
+	}
+	private record Signal(long time, double flow, double pressure) {}
+	private record Noise(double flowCenter, double pressureCenter, double flowSigma, double pressureSigma) {}
+	private record Fit(double error) {}
 
 	private static final class Episode
 	{
@@ -305,14 +526,11 @@ public final class EventAnalyzer
 					active.systemID = facility.system; active.facilityID = facility.id; active.assetID = asset;
 					active.category = category; active.status = "ongoing";
 					active.onsetUnix = candidateTime; active.onsetTime = Instant.ofEpochSecond(candidateTime).toString();
+					active.detectedUnix = sample.time;
 					active.eventID = "EV-" + UUID.nameUUIDFromBytes((asset + ":" + category + ":" + candidateTime)
 							.getBytes(StandardCharsets.UTF_8));
 					active.confidence = confirmations == 1 ? 0.99 : 0.90;
-					active.evidence = switch(category) {
-						case "pump_failure" -> "Pump status reports fault (2).";
-						case "pump_degradation" -> "At least three running samples show flow below 90% of rated capacity and reduced discharge pressure.";
-						default -> "At least three running samples show pipeline flow loss above 7% and reduced receiving pressure.";
-					};
+					active.evidence = "Pump status reports fault (2).";
 					facility.events.add(active);
 				}
 			}
@@ -364,7 +582,6 @@ public final class EventAnalyzer
 			wells.add(new Well(well.getString("id"), water, value));
 			baseline += water; revenue += value;
 		}
-		event.lostRevenuePerHour = revenue;
 		Plan[] choices = new Plan[fleet + 1];
 		FailurePlan result = new FailurePlan(event, choices, fleet);
 		if(horizon <= 0)

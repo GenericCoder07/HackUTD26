@@ -1,10 +1,16 @@
 # Event analysis
 
-`DatasetService` resolves the dataset source revision, downloads `network.json`, `ops.json`, and `telemetry.csv` from that revision, then calls `EventAnalyzer.analyze` on an isolated temporary CSV. It publishes the network, events, source revision, and telemetry-derived start/end timestamps together only after success. The temporary file is removed afterwards; the repository CSV is untouched.
+`WebServer.getEvents()` reads the currently loaded `networkJSON`, `opsJSON`, and
+`telemetry.csv` in the Java process's working directory. It delegates to
+`new EventAnalyzer(networkJSON, opsJSON).analyze(Path.of("telemetry.csv"))`.
+The analyzer does not fetch data, modify the CSV, read an answer key, or use the
+computer's clock. The final telemetry timestamp is the analysis time.
 
-No events is a valid empty result. Invalid configuration, malformed JSON/CSV, or missing data produces a structured HTTP error while preserving the previous analysis. Superseded analyses cannot publish. Reads require the matching dataset ID; a replaced ID returns HTTP 409.
-
-The HTTP layer supplies complete sorted results for priority, recent, and cost and exports JSON. Priority places ongoing pump failures first by countdown, breaking ties by facility lost revenue per hour; other ongoing incidents follow, then resolved history. The analyzer's detection and planning rules below are unchanged. No documentation or answer-key file is downloaded by the live source.
+The method returns all detected ongoing and resolved incidents, ordered by the
+existing `Event.sort` (currently most recent onset first). No incidents means an
+empty array. Unloaded JSON, invalid configuration, unreadable files, and malformed
+or incomplete telemetry cause `getEvents()` to log a diagnostic and return `null`.
+The analyzer itself throws an exception so callers/tests can inspect the cause.
 
 ## Detection
 
@@ -16,21 +22,43 @@ the JSON files. No particular system, facility, or incident ID is hardcoded.
 | Incident | Start evidence | Recovery evidence |
 | --- | --- | --- |
 | Pump failure | Pump status is `2` (fault); one sample is sufficient | First status other than `2` |
-| Pump degradation | Three qualifying running samples with flow below 90% of rated flow AND discharge pressure below disposal pressure + 130 psi | Three qualifying running samples with flow at least 95% of rated flow AND discharge pressure at least disposal pressure + 135 psi |
-| Pipeline leak | Three qualifying running samples losing more than 7% of pump flow AND receiving pressure below disposal pressure + 30 psi | Three qualifying running samples losing less than 3% of pump flow AND receiving pressure at least disposal pressure + 35 psi |
+| Pump degradation | Sustained loss of running flow and discharge pressure relative to healthy baseline/noise | Sustained return of both signals to the healthy baseline |
+| Pipeline leak | Sustained receiving-flow loss and receiving-pressure deficit relative to healthy baseline/noise | Sustained return of both signals to the healthy baseline |
 
-Leak checks require pump flow above 10% of rated capacity. Pump-off periods do
-not provide leak/degradation evidence and preserve an existing episode and its
-pending evidence. An indeterminate running sample resets confirmation counters.
-Recovery is backdated to the first healthy sample in the confirmed recovery run;
-onset is the first anomalous sample in the confirmed anomaly run. A pump failure
-ends an existing degradation event and creates a separate failure event.
-Small isolated spikes are ignored. These thresholds are heuristic: slight faults
-below these margins and events beginning or ending while the pump is off may be
-detected late or remain unresolved until observable running samples arrive.
+The first 48 running samples provide a trimmed-mean baseline and median absolute
+deviation noise estimate, provided their median is near the nominal physical
+baseline. Otherwise the nominal baseline is used so an obvious initial fault is
+not learned as healthy. Minimum noise estimates are 0.004 normalized flow and
+2 psi. Nominal running pressure offsets are +150 psi at the pump and +50 psi at
+the pipeline, relative to disposal pressure, per the dataset specification.
 
-Stable UUID-based event IDs use asset, category, and observed onset time. A recording
-that starts mid-fault can establish only an observed onset, not the true onset.
+Both signals use seven-running-sample median windows. Flow shift must exceed
+`max(0.008, 3 * flowNoise / sqrt(7))`; pressure deficit must exceed
+`max(2 psi, 3 * pressureNoise / sqrt(7))` for degradation, or a 5 psi floor for
+leaks. Three successive abnormal windows confirm the incident. Seven successive
+windows below half those thresholds confirm recovery, preventing early weak
+faults from fragmenting into multiple incidents as noise crosses a threshold.
+These are heuristic detection thresholds, not statistical confidence intervals.
+
+Confirmation time is exported as `detected_unix`, separately from onset.
+Pump onset is estimated by fitting a healthy plateau followed by either a
+continuous ramp or a step, with noise-normalized least squares over a five-minute
+time grid. Leak onset is the first corroborated affected running observation;
+extrapolating its later slope to zero would misplace an unknown initial leak step.
+Recovery uses a fitted change from the established fault to a healthy baseline,
+removing the confirmation window's delay from the reported end time.
+
+Leak checks require pump flow above 10% of rated capacity. Off cycles neither
+establish faults nor prove recovery. A pump failure closes an existing degradation
+event and creates a separate failure event. Isolated spikes are suppressed by
+the medians and repeated confirmation. The true start/end of a leak during an
+off interval is not identifiable from these sensors: reported boundaries can
+remain late until running evidence is available.
+
+UUID-based event IDs use asset, category, and estimated onset time. Repeating the
+same recording produces the same IDs; additional observations may refine onset
+and therefore change a slow incident's ID across snapshots. A recording that
+starts mid-fault can establish only an observed onset, not the true onset.
 Confidence is a fixed evidence-strength score (0.99 for explicit faults, 0.90 for
 the confirmed flow/pressure rules), **not a calibrated probability**.
 
@@ -97,13 +125,33 @@ values. Extra well/unknown sensor series are not used for detection.
 is an array. Timestamps use `long`, and tank level retains fractional precision.
 This replaces the previous hyphenated serialization keys.
 
+The event array must add `event.toJSON()` directly, without wrapping that object
+in the Java-bean `new JSONObject(Object)` constructor.
+
 ## Verification
 
-From `Java Webserver` with a JDK on PATH:
+From the project root with a JDK on PATH:
 
-```sh
-javac --release 17 -sourcepath src -d bin src/WebServer/WebServer.java tests/WebServer/IntegrationTest.java
-java -cp bin WebServer.IntegrationTest
+```powershell
+javac --release 17 -cp bin -sourcepath src -d tests/.classes tests/WebServer/EventDetectionTest.java src/WebServer/EventAnalyzer.java src/WebServer/Event.java
+java -cp "tests/.classes;bin" WebServer.EventDetectionTest
+# Compare a recording to an externally supplied key at a specified cutoff:
+java -cp "tests/.classes;bin" WebServer.EventDetectionTest telemetry.csv "path/to/answer-key.json" "2026-10-08T12:00:00Z"
 ```
 
-Synthetic test fixtures exercise new IDs and coordinates, telemetry-dependent incidents and countdowns, zero-event recordings, source revisions, failed inputs/downloads, competing requests, stale IDs, sorting, export, static asset bytes, and discovery/backoff behavior. The suite uses a temporary localhost server and never modifies the real CSV. Confidence remains a heuristic evidence-strength score; no answer-key accuracy claim is made.
+The new dependency-free regression suite uses five random noise seeds to check
+normal cycling, isolated spikes, mild ramps, small leaks, repaired and repeated
+step faults, faults already present at recording start, degradation transitioning
+to failure, truncated recordings, 2040 timestamps, and inferred versus confirmed
+onset. Its configuration fixture is public practice network/operations metadata;
+no answer key is bundled or loaded by production code. Temporary CSV fixtures
+and optional cutoff copies are deleted; the working recording is never rewritten.
+
+Against the supplied October 8 12:00 UTC answer key, the revised detector returns
+13/13 matching incidents with no extras and correct statuses, versus 10/13 before.
+All five pump failure onsets remain exact. Estimated degradation onsets are within
+15 minutes of the key; leak onset differences are +60, -5, and +10 minutes.
+EVENT_1 still ends at 10:00 rather than the hidden 08:00 repair time: the pump was
+off at repair and the first observable recovered running sample is at 10:00.
+Other matched resolved end times are exact. These are snapshot-specific evaluation
+results, not a guarantee of performance on unseen recordings.
