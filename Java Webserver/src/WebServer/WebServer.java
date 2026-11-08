@@ -37,10 +37,18 @@ public class WebServer
 				String githubRepo = getStringOrDefault(JSON, "github-repo", null);
 				
 				if(githubRepo == null)
-					return badResponse("GitHub Repo link must be included");
+					return badResponse("GitHub Repo link not included");
+				
+				if(!loadGithub())
+					return badResponse("GitHub Repo link not included");
+				
+				getEvents();
 				
 				JSONObject ret = new JSONObject();
 				ret.put("response", 200);
+				ret.put("success", true);
+				ret.put("response-text", "Events successfully set");
+				
 				return null;
 			}
 			
@@ -49,7 +57,24 @@ public class WebServer
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
+				
+				
 				String sortParam = getStringOrDefault(JSON, "sort-param", "RECENT");
+				
+				return null;
+			}
+			
+		});
+		server.createContext("/api/getnetwork", new APIHandler() {
+
+			public JSONObject handleAPICall(JSONObject JSON)
+			{
+				
+				
+				JSONObject ret = new JSONObject();
+				ret.put("response", 200);
+				ret.put("success", true);
+				ret.put("response-text", "Events successfully set");
 				
 				return null;
 			}
@@ -61,6 +86,10 @@ public class WebServer
 		server.createContext("/js", new DirectoryHandler("/js", new File("websiteFiles")));
 		server.createContext("/images", new DirectoryHandler("/images", new File("websiteFiles")));
 		server.createContext("/favicon.ico", new FileHandler(new File("websiteFiles/favicon.ico")));
+	}
+
+	protected static void loadGithub()
+	{
 	}
 
 	public static String getStringOrDefault(JSONObject JSON, String key, String defaultObject)

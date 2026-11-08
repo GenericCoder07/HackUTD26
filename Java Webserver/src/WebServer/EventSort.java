@@ -13,4 +13,9 @@ public enum EventSort
 	{
 		this.func = func;
 	}
+	
+	public int compare(Event a, Event b)
+	{
+		return func.apply(a, b);
+	}
 }
