@@ -708,7 +708,7 @@ function zoomAt(factor, x, y, smooth = false) {
   };
   zoomFrame = requestAnimationFrame(step);
 }
-function zoomCenter(factor) { if (state.scope !== 'facility' && state.network) { GeoMap.zoom(factor > 1 ? .75 : -.75); return; } const rect = $('diagram-surface').getBoundingClientRect(); zoomAt(factor ** 1.5, rect.width / 2, rect.height / 2, true); }
+function zoomCenter(factor) { if (state.scope !== 'facility' && state.network) { GeoMap.zoom(factor > 1 ? .375 : -.375); return; } const rect = $('diagram-surface').getBoundingClientRect(); zoomAt(factor ** .75, rect.width / 2, rect.height / 2, true); }
 function revealSelectedAsset() {
   const node = [...$('viewport').querySelectorAll('[data-node-id]')].find(item => item.getAttribute('data-node-id') === state.assetId); if (!node) return;
   const rect = node.getBoundingClientRect(), surface = $('diagram-surface').getBoundingClientRect(), value = transform();
@@ -722,7 +722,7 @@ function pointerDistance() { const points = [...pointers.values()]; return Math.
 function pointerCenter() { const points = [...pointers.values()]; return { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 }; }
 function setupViewport() {
   const surface = $('diagram-surface');
-  surface.addEventListener('wheel', event => { if (state.scope !== 'facility') return; if (!state.bounds) return; event.preventDefault(); const rect = surface.getBoundingClientRect(); const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1); zoomAt(Math.exp(-Math.max(-150, Math.min(150, delta)) * .00525), event.clientX - rect.left, event.clientY - rect.top, true); }, { passive: false });
+  surface.addEventListener('wheel', event => { if (state.scope !== 'facility') return; if (!state.bounds) return; event.preventDefault(); const rect = surface.getBoundingClientRect(); const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1); zoomAt(Math.exp(-Math.max(-150, Math.min(150, delta)) * .002625), event.clientX - rect.left, event.clientY - rect.top, true); }, { passive: false });
   surface.addEventListener('pointerdown', event => {
     if (state.scope !== 'facility') return;
     if (event.target.closest('.zoom-controls') || event.target.closest('.diagram-message') || event.button !== 0) return;

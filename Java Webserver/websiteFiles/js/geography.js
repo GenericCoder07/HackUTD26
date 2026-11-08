@@ -35,7 +35,7 @@ const GeoMap = (() => {
   function ensureMap() {
     if (map) return true;
     if (typeof L === 'undefined') { status('Map library unavailable. Use the locations list to explore equipment.'); return false; }
-    map = L.map('network-map', { zoomControl: false, zoomSnap: 0, zoomDelta: .75, maxZoom: 19,
+    map = L.map('network-map', { zoomControl: false, zoomSnap: 0, zoomDelta: .375, maxZoom: 19,
       scrollWheelZoom: false,
       minZoom: 1, zoomAnimation: !reduced.matches, fadeAnimation: !reduced.matches, attributionControl: true });
     map.setView([0,0],1,{animate:false});
@@ -62,7 +62,7 @@ const GeoMap = (() => {
       if (event.target.closest?.('.map-backdrop-control, .leaflet-control')) return;
       event.preventDefault();
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? container.clientHeight : 1);
-      glide(-Math.max(-180, Math.min(180, delta)) / 60, map.mouseEventToContainerPoint(event));
+      glide(-Math.max(-180, Math.min(180, delta)) / 120, map.mouseEventToContainerPoint(event));
     }, { passive: false });
     container.addEventListener('dblclick', event => { userZoom = true; focus = map.mouseEventToContainerPoint(event); });
     container.addEventListener('keydown', event => { if (['+', '-', '=', '_'].includes(event.key)) { userZoom = true; focus = map.getSize().divideBy(2); } });

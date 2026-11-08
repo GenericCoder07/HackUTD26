@@ -36,25 +36,59 @@ A relative challenge folder path, such as `history/snapshot_2026-10-08T1200`, al
 - Dashed arrows indicate facility-to-disposal membership. Actual pipeline routes and connections between systems are not inferred.
 - Zoom near a system at map level 11 to enter it; near a facility at level 15 to open its equipment schematic. Targets must be within 80 screen pixels of the zoom focus.
 - Zoom the facility below 65% of its fitted scale to return to its system at level 14. Zoom the system out to level 9 to return to the network.
-- Wheel and zoom-button input use continuous animation with an accumulating target. Reduced-motion preferences apply zoom immediately. Pinch, keyboard controls, clickable markers, breadcrumbs, and the locations list provide alternative navigation.
+- Wheel and zoom-button input use continuous animation with an accumulating target, at half the previous sensitivity for finer control. Reduced-motion preferences apply zoom immediately. Pinch, keyboard controls, clickable markers, breadcrumbs, and the locations list provide alternative navigation.
 - Equipment is schematic: **wells → tank → pump → pipeline → disposal**. Equipment coordinates are not supplied. Missing geographic coordinates remain accessible through **Locations and unmapped entries**.
 
 The basemap uses **OpenStreetMap** raster tiles; **Leaflet 1.9.4** handles projection, markers, panning, and geographic overlays. Leaflet's JS/CSS/assets are bundled locally under `websiteFiles/vendor/leaflet`, so no CDN or map API key is needed. Street tiles require internet access. If they fail, markers, connections, labels, and the distance scale remain usable on a plain background.
 
 The existing Watchpot logo is embedded as SVG in the page, retaining its design and aspect ratio without depending on the server's image response handling.
 
+## Screenshots
+
+These sample recordings illustrate the geographic views, equipment flow, and incident inspector. The screenshots were captured before the current pasted-link loading update; their cached-recording controls and timestamp labels reflect that earlier version. Incident counts and recommendations vary with the recording and analyzer version.
+
+**Network overview:** systems are positioned geographically, with active incidents highlighted.
+
+![Watchpot geographic network overview](docs/images/watchpot-01-network-overview.png)
+
+**Incident response:** inspect the equipment flow, estimated time to shutdown, tank level, and advisory response.
+
+![Watchpot incident response and equipment schematic](docs/images/watchpot-05-incident-response-details.png)
+
+<details>
+<summary>More views: connections, system summaries, and equipment</summary>
+
+**Facility connections:** dashed arrows indicate connectivity to a shared disposal site.
+
+![Facility-to-disposal connections](docs/images/watchpot-02-facility-connections-map.png)
+
+**System summary:** hover to inspect facility/well counts, incident totals, and tank capacity.
+
+![System hover summary](docs/images/watchpot-03-system-summary-hover.png)
+
+**Equipment schematic:** follow wells through the tank, pump, and pipeline to disposal.
+
+![Facility equipment schematic](docs/images/watchpot-04-equipment-schematic.png)
+
+</details>
+
 ## Architecture
 
 One Java process serves the frontend and API. The frontend is plain HTML/CSS/JavaScript with Leaflet and an SVG equipment schematic.
 
-```text
-Browser: event list / inspector / geographic map / equipment schematic
-  ├─ optional OpenStreetMap street tiles
-  └─ same-origin HTTP requests
-Java server: WebServer + WebToolkit
-  ├─ serves HTML, CSS, JavaScript, and bundled map assets
-  ├─ downloads network.json, ops.json, telemetry.csv from a pasted folder URL
-  └─ EventAnalyzer computes events, countdowns, and response plans
+```mermaid
+flowchart TD
+    Operator[Operator pastes a GitHub folder link] --> UI[Browser: HTML, CSS, JavaScript]
+    UI -->|POST /api/getevents| Server[Java 17 HTTP server]
+    GitHub[GitHub dataset folder] -->|network.json, ops.json, telemetry.csv| Server
+    Server --> Analyzer[EventAnalyzer]
+    Analyzer --> Events[Incidents, tank countdowns, advisory plans]
+    Events --> UI
+    Server -->|GET /api/getnetwork| UI
+    UI --> Map[Leaflet geographic network map]
+    OSM[OpenStreetMap tiles] -. optional basemap .-> Map
+    UI --> Equipment[SVG equipment schematic]
+    UI --> Inspector[Event list and inspector]
 ```
 
 Paths below are relative to `Java Webserver/`:
