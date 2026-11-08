@@ -8,6 +8,8 @@ This is a plain HTML/CSS/JavaScript recording-analysis console. There is no buil
 
 All branding tokens are in the first block of `css/style.css`. Dataset repository configuration is at the top of `js/app.js`. Dataset choices are discovered through GitHub's public Contents API; metadata failures offer an explicit manual folder entry. No credentials are embedded.
 
+To exercise the complete frontend without a backend, serve `websiteFiles` and open `html/index.html?mode=demo`. Demo mode is selected only by that explicit URL parameter, uses a separate in-memory adapter, and never calls the live API or GitHub. Live API mode remains the default when the parameter is absent.
+
 ## Backend handoff
 
 The `API` adapter in `js/app.js` is the single integration point. These contracts remain provisional:
@@ -27,6 +29,6 @@ Dataset analyses are serialized, including their subsequent network/sort reads. 
 
 ## Verification and current limitation
 
-Verified with Chromium against a temporary static HTTP server and intercepted development responses kept outside production files: exact dataset POST URLs, dynamic dataset discovery/refresh, event wrappers and malformed responses, null versus zero, mixed recommendations, resolved history, linked three-level topology selection, backend sort order and failed-sort preservation, serialized rapid selections, export protocol validation, zoom controls, and desktop/mobile overflow. No fixture fallback is shipped in this application.
+Verified with Chromium against a temporary static HTTP server and intercepted development responses kept outside production files: exact dataset POST URLs, dynamic dataset discovery/refresh, event wrappers and malformed responses, null versus zero, mixed recommendations, resolved history, linked three-level topology selection, backend sort order and failed-sort preservation, serialized rapid selections, export protocol validation, zoom controls, and desktop/mobile overflow. Demo mode now provides deterministic local data for the same frontend interactions without changing live API behavior.
 
 The checked-in Java API code is incomplete: it contains syntax/type errors, placeholder handlers returning null, a GET/body parsing mismatch, and no export route. This frontend does not modify those teammate-owned files. End-to-end Java/API integration remains unverified until those handlers are completed. Static routes were inspected; browser verification used a separate static server, not a running Java application.

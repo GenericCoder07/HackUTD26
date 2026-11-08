@@ -3,6 +3,7 @@
 const DATA_SOURCE = { owner: 'nihaal419', repo: 'HackUTD-ZeroDay', ref: 'main' };
 const PREFERRED_DATASET = 'history/snapshot_2026-10-08T1200';
 const REQUIRED_FILES = ['network.json', 'ops.json', 'telemetry.csv'];
+const DEMO_MODE = new URLSearchParams(location.search).get('mode') === 'demo';
 const $ = id => document.getElementById(id);
 const finite = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
 const idOf = value => value == null ? null : String(value);
@@ -10,7 +11,7 @@ const encodedPath = path => path.split('/').map(encodeURIComponent).join('/');
 const folderUrl = path => `https://github.com/${DATA_SOURCE.owner}/${DATA_SOURCE.repo}/tree/${encodeURIComponent(DATA_SOURCE.ref)}/${encodedPath(path)}`;
 const githubUrl = path => `https://api.github.com/repos/${DATA_SOURCE.owner}/${DATA_SOURCE.repo}/contents/${encodedPath(path)}?ref=${encodeURIComponent(DATA_SOURCE.ref)}`;
 
-/* API ADAPTER — provisional wire contracts live only here. No runtime fixtures. */
+/* LIVE API ADAPTER — provisional wire contracts live only here. */
 const API = {
   async request(path, options = {}) {
     const response = await fetch(path, { ...options, headers: { Accept: 'application/json', ...options.headers } });
@@ -96,6 +97,87 @@ const API = {
     return choices.sort((a, b) => a.path.localeCompare(b.path));
   }
 };
+
+/* DEMO ADAPTER — deterministic local data; it never calls backend or GitHub APIs. */
+const DEMO_EVENTS = [
+  {
+    event_id: 'demo-pressure-01', system_id: 'north-hub', facility_id: 'north-pad',
+    asset_id: 'north-pump-a', category: 'pump_failure', status: 'ongoing',
+    onset_unix: 1791532800, confidence: 0.94, level_pct: 82, est_cost: 18400,
+    hours_to_limit: { p10: 5, p50: 9, p90: 16 },
+    evidence: ['Discharge pressure is 18% above the operating band.', 'Telemetry trend accelerated over the last 40 minutes.'],
+    recommended_actions: [{ type: 'field_inspection', asset_id: 'north-pump-a' }, { type: 'none' }]
+  },
+  {
+    event_id: 'demo-tank-02', system_id: 'north-hub', facility_id: 'north-pad',
+    asset_id: 'north-tank-1', category: 'level', status: 'ongoing',
+    onset_unix: 1791529200, confidence: 0.87, level_pct: 91, est_cost: 7200,
+    hours_to_limit: { p10: 12, p50: 22, p90: 36 },
+    evidence: ['Tank level is approaching the configured shutdown threshold.'],
+    recommended_actions: [{ type: 'none' }]
+  },
+  {
+    event_id: 'demo-flow-03', system_id: 'south-hub', facility_id: 'south-pad',
+    asset_id: 'south-pipeline-1', category: 'pipeline_leak', status: 'resolved',
+    onset_unix: 1791457200, end_unix: 1791471600, confidence: 0.91, est_cost: 3150,
+    evidence: ['Flow returned to the expected range after a valve adjustment.'],
+    recommended_actions: [{ type: 'none' }]
+  },
+  {
+    event_id: 'demo-temperature-04', system_id: 'south-hub', facility_id: 'south-pad',
+    asset_id: 'south-well-1', category: 'temperature', status: 'ongoing',
+    onset_unix: 1791525600, confidence: 0.79, est_cost: 9800,
+    hours_to_limit: { p10: 18, p50: 31, p90: 48 },
+    evidence: ['Wellhead temperature is rising against the daily baseline.'],
+    recommended_actions: [{ type: 'field_inspection', asset_id: 'south-well-1' }]
+  }
+];
+const DEMO_NETWORK = {
+  defaults: { tank_limits_pct: { shutdown: 95 } },
+  systems: [
+    {
+      id: 'north-hub', name: 'North Hub', facilities: [{
+        id: 'north-pad', name: 'North Pad',
+        tank: { id: 'north-tank-1', capacity_bbl: 12000, start_level_pct: 63 },
+        pump: { id: 'north-pump-a', max_flow_bpd: 18000 },
+        pipeline: { id: 'north-pipeline-1', max_pressure_psi: 950 },
+        wells: [{ id: 'north-well-1', oil_bpd: 4200, baseline_water_bpd: 700 }]
+      }]
+    },
+    {
+      id: 'south-hub', name: 'South Hub', facilities: [{
+        id: 'south-pad', name: 'South Pad',
+        tank: { id: 'south-tank-1', capacity_bbl: 9000, start_level_pct: 48 },
+        pump: { id: 'south-pump-a', max_flow_bpd: 14000 },
+        pipeline: { id: 'south-pipeline-1', max_pressure_psi: 800 },
+        wells: [{ id: 'south-well-1', oil_bpd: 3600, baseline_water_bpd: 520 }]
+      }]
+    }
+  ]
+};
+const DEMO_API = {
+  async discoverDatasets() {
+    return [
+      { path: 'demo/watchpot-live-shift', url: 'demo://watchpot-live-shift', group: 'Practice' },
+      { path: 'demo/watchpot-resolved-history', url: 'demo://watchpot-resolved-history', group: 'Practice' }
+    ];
+  },
+  async validateFolder(path) { return path.startsWith('demo/'); },
+  async analyzeDataset(url) {
+    return API.eventResult({ events: DEMO_EVENTS, as_of_unix: 1791536400, dataset_id: url.split('/').pop() });
+  },
+  async fetchNetwork() { return normalizeNetwork(DEMO_NETWORK); },
+  async sortEvents(mode) {
+    const events = DEMO_EVENTS.map(event => ({ ...event }));
+    if (mode === 'recent') events.sort((a, b) => b.onset_unix - a.onset_unix);
+    if (mode === 'cost') events.sort((a, b) => b.est_cost - a.est_cost);
+    if (mode === 'priority') events.sort((a, b) => Number(b.status === 'ongoing') - Number(a.status === 'ongoing') || b.confidence - a.confidence);
+    return API.eventResult({ events, as_of_unix: 1791536400, dataset_id: 'watchpot-demo' });
+  },
+  async exportEvents() { return 'https://example.com/watchpot-demo-events.json'; },
+  async directory() { return []; }
+};
+const ACTIVE_API = DEMO_MODE ? DEMO_API : API;
 
 /* NORMALIZATION — explicit aliases and schema mappings only. */
 function timestamp(epoch, iso) {
@@ -237,7 +319,7 @@ async function discover() {
   $('discovery-status').className = '';
   $('discovery-status').textContent = 'Refreshing dataset choices…';
   try {
-    const choices = await API.discoverDatasets();
+    const choices = await ACTIVE_API.discoverDatasets();
     state.choices = choices;
     if (state.selectedFolder && !choices.some(choice => choice.path === state.selectedFolder.path)) state.choices.push(state.selectedFolder);
     renderDatasets(); $('discovery-status').textContent = choices.length ? '' : 'No eligible datasets found. Enter a folder manually.';
@@ -271,17 +353,17 @@ async function processDatasets() {
   while (state.pendingDataset) {
     const { choice, generation } = state.pendingDataset; state.pendingDataset = null;
     try {
-      const result = await API.analyzeDataset(choice.url);
+      const result = await ACTIVE_API.analyzeDataset(choice.url);
       if (generation !== state.datasetGeneration) continue;
       const context = { folderUrl: choice.url, datasetId: result.datasetId, path: choice.path, asOf: result.asOf };
       let network = null, networkError = null;
-      try { network = await API.fetchNetwork(context); } catch (error) { networkError = error.message; }
+      try { network = await ACTIVE_API.fetchNetwork(context); } catch (error) { networkError = error.message; }
       if (generation !== state.datasetGeneration) continue;
       let sorted = result, confirmedSort = null, sortError = null;
       // Coalesce sort changes during reads; backend state remains serialized.
       while (true) {
         const mode = state.sort, sortGeneration = state.sortGeneration;
-        try { sorted = await API.sortEvents(mode, context); confirmedSort = mode; sortError = null; }
+        try { sorted = await ACTIVE_API.sortEvents(mode, context); confirmedSort = mode; sortError = null; }
         catch (error) { sortError = `${mode} sort failed: ${error.message}`; }
         if (generation !== state.datasetGeneration || sortGeneration === state.sortGeneration) break;
       }
@@ -309,7 +391,7 @@ async function processSorts() {
     const generation = state.sortGeneration, datasetGeneration = state.datasetGeneration, mode = state.sort;
     $('sort-status').textContent = `Sorting by ${mode}…`;
     try {
-      const result = await API.sortEvents(mode, state.loaded);
+      const result = await ACTIVE_API.sortEvents(mode, state.loaded);
       if (datasetGeneration !== state.datasetGeneration) return;
       if (generation !== state.sortGeneration) continue;
       state.events = result.events; state.orderedIds = result.events.map(event => event.event_id);
@@ -330,7 +412,7 @@ async function manualDataset(event) {
   }
   const submit = event.currentTarget.querySelector('button'); submit.disabled = true;
   let validated;
-  try { validated = await API.validateFolder(path); }
+  try { validated = await ACTIVE_API.validateFolder(path); }
   catch { validated = null; }
   submit.disabled = false;
   if (validated === false) { $('manual-status').textContent = 'Folder is accessible but is missing one or more required input files.'; return; }
@@ -585,7 +667,7 @@ async function retryNetwork() {
   if (state.loading || !state.loaded || state.datasetError) return;
   const generation = state.datasetGeneration;
   $('diagram-message').textContent = 'Loading network…';
-  try { const network = await API.fetchNetwork(state.loaded); if (generation !== state.datasetGeneration) return; state.network = network; state.networkError = null; }
+  try { const network = await ACTIVE_API.fetchNetwork(state.loaded); if (generation !== state.datasetGeneration) return; state.network = network; state.networkError = null; }
   catch (error) { if (generation !== state.datasetGeneration) return; state.networkError = error.message; }
   renderDiagram(); renderInspector();
 }
@@ -594,7 +676,7 @@ async function exportEvents() {
   const generation = ++state.exportGeneration, datasetGeneration = state.datasetGeneration;
   $('export').disabled = true; $('export-status').textContent = 'Preparing export link…';
   try {
-    const url = await API.exportEvents(state.loaded);
+    const url = await ACTIVE_API.exportEvents(state.loaded);
     if (generation !== state.exportGeneration || datasetGeneration !== state.datasetGeneration) return;
     const link = el('a', '', `Open events export · ${state.loaded.path}`); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.download = 'events.json';
     $('export-status').replaceChildren(document.createTextNode('Export link ready.'), link);
@@ -673,6 +755,8 @@ function setupViewport() {
 }
 
 /* INITIALIZATION */
+$('mode-indicator').textContent = DEMO_MODE ? 'DEMO MODE · ?mode=demo' : 'LIVE API MODE';
+$('mode-indicator').classList.toggle('demo', DEMO_MODE);
 $('dataset').addEventListener('change', event => selectDataset(state.choices.find(choice => choice.path === event.target.value)));
 $('refresh').addEventListener('click', discover);
 $('manual-form').addEventListener('submit', manualDataset);
