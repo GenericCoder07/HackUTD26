@@ -2,6 +2,7 @@
 /* CONFIGURATION — dataset metadata is separate from analysis results. */
 const DATA_SOURCE = { owner: 'nihaal419', repo: 'HackUTD-ZeroDay', ref: 'main' };
 const PREFERRED_DATASET = 'history/snapshot_2026-10-08T1200';
+const DATASET_ROOT = 'websiteFiles/data';
 const DEMO_MODE = new URLSearchParams(location.search).get('mode') === 'demo';
 const $ = id => document.getElementById(id);
 const finite = value => typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -19,6 +20,11 @@ const API = {
     if (!response.ok) throw new Error(data['response-text'] ?? `Request failed (HTTP ${response.status}).`);
     this.checkMetadata(data);
     return data;
+  },
+  post(path, body) {
+    return this.request(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
   },
   checkMetadata(data) {
     if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -38,28 +44,36 @@ const API = {
     }
     return {
       events: normalized,
+      rawEvents: events,
       asOf: timestamp(data?.as_of_unix, data?.as_of_ts),
       datasetId: !Array.isArray(data) ? data?.dataset_id ?? null : null,
       revision: data?.source_revision ?? null
     };
   },
-  async analyzeDataset(url) {
-    return this.eventResult(await this.request('/api/getevents', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ 'github-repo': url })
+  async getEvents(dataset, mode) {
+    return this.eventResult(await this.post('/api/getevents', {
+      dataset, 'sort-param': mode.toUpperCase()
     }));
   },
   async fetchNetwork(context) {
-    return normalizeNetwork(await this.request(`/api/getnetwork?dataset_id=${encodeURIComponent(context.datasetId)}`));
+    return normalizeNetwork(await this.post('/api/getnetwork', { dataset: context.dataset }));
   },
   async sortEvents(mode, context) {
-    return this.eventResult(await this.request(`/api/resortevents?pass-params=${encodeURIComponent(mode)}&dataset_id=${encodeURIComponent(context.datasetId)}`));
+    return this.getEvents(context.dataset, mode);
   },
-  async exportEvents(context) {
-    return this.request(`/api/exportevents?dataset_id=${encodeURIComponent(context.datasetId)}`);
+  async importDataset(url, password) {
+    let authorization;
+    try { authorization = await this.post('/api/verifyadmin', { 'admin-password': password }); }
+    catch { throw new Error('Incorrect admin password.'); }
+    const session = authorization['admin-session'];
+    if (!authorization.success || typeof session !== 'string' || !session) throw new Error('Incorrect admin password.');
+    return this.post('/api/processdata', { 'github-repo': url, 'admin-session': session });
   },
-  async validateFolder() { return null; },
   async discoverDatasets() {
-    return []; // Live recordings are supplied explicitly through the folder-link form.
+    const data = await this.request('/api/getdatasets');
+    if (!Array.isArray(data.datasets)) throw new Error('The server returned an invalid dataset list.');
+    return data.datasets.filter(name => typeof name === 'string' && name).sort((a, b) => a.localeCompare(b))
+      .map(name => ({ path: name, dataset: `${DATASET_ROOT}/${name}`, group: 'Datasets' }));
   }
 };
 
@@ -123,13 +137,12 @@ const DEMO_NETWORK = {
 const DEMO_API = {
   async discoverDatasets() {
     return [
-      { path: 'demo/watchpot-live-shift', url: 'demo://watchpot-live-shift', group: 'Practice' },
-      { path: 'demo/watchpot-resolved-history', url: 'demo://watchpot-resolved-history', group: 'Practice' }
+      { path: 'demo/watchpot-live-shift', dataset: 'demo://watchpot-live-shift', group: 'Practice' },
+      { path: 'demo/watchpot-resolved-history', dataset: 'demo://watchpot-resolved-history', group: 'Practice' }
     ];
   },
-  async validateFolder(path) { return path.startsWith('demo/'); },
-  async analyzeDataset(url) {
-    return API.eventResult({ events: DEMO_EVENTS, as_of_unix: 1791536400, dataset_id: url.split('/').pop() });
+  async getEvents(dataset, mode) {
+    return this.sortEvents(mode, { datasetId: dataset.split('/').pop() });
   },
   async fetchNetwork() { return normalizeNetwork(DEMO_NETWORK); },
   async sortEvents(mode, context) {
@@ -139,8 +152,7 @@ const DEMO_API = {
     if (mode === 'priority') events.sort((a, b) => Number(b.status === 'ongoing') - Number(a.status === 'ongoing') || b.confidence - a.confidence);
     return API.eventResult({ events, as_of_unix: 1791536400, dataset_id: context.datasetId });
   },
-  async exportEvents(context) { return { events: DEMO_EVENTS, dataset_id: context.datasetId, as_of_unix: 1791536400, mode: 'demo' }; },
-  async directory() { return []; }
+  async importDataset() { throw new Error('Admin upload is unavailable in demo mode.'); }
 };
 const ACTIVE_API = DEMO_MODE ? DEMO_API : API;
 
@@ -196,7 +208,7 @@ function normalizeNetwork(raw) {
 
 /* STATE AND SELECTORS */
 const state = {
-  choices: [], selectedFolder: null, loaded: null, network: null, events: [], orderedIds: [],
+  choices: [], selectedFolder: null, loaded: null, network: null, events: [], rawEvents: [], orderedIds: [],
   status: 'ongoing', sort: 'priority', confirmedSort: null, scope: 'network', systemId: null,
   facilityId: null, assetId: null, eventId: null, viewports: new Map(), facilityFits: new Map(), bounds: null,
   loading: false, datasetError: null, networkError: null, sortError: null,
@@ -272,47 +284,45 @@ function empty(container, title, message, action) {
   const box = el('div', 'empty'); box.append(el('strong', '', title), el('div', '', message)); if (action) box.append(action); container.append(box);
 }
 function facts(container, entries) {
-  const list = el('dl', 'facts'); entries.forEach(([label, value]) => { list.append(el('dt', '', label), el('dd', '', value)); }); container.append(list);
+  const list = el('dl', 'facts'); entries.forEach(([label, value]) => {
+    const term = el('dt', '', label), definition = el('dd', '', value);
+    if (label === 'Resolution') { term.classList.add('resolution-label'); definition.classList.add('resolution-value'); }
+    list.append(term, definition);
+  }); container.append(list);
 }
 function section(title) { const node = el('section', 'inspector-section'); node.append(el('h4', '', title)); return node; }
 
 /* DATASET DISCOVERY AND SERIALIZED ANALYSIS */
 let discovering = false;
 async function discover() {
-  if (!DEMO_MODE) {
-    if (state.selectedFolder) selectDataset(state.selectedFolder);
-    else { $('manual').open = true; $('manual-path').focus(); }
-    return;
-  }
   if (discovering) return;
   discovering = true; $('refresh').disabled = true;
+  const selectedPath = state.selectedFolder?.path;
   const previousPaths = new Set(state.choices.map(choice => choice.path));
   $('discovery-status').className = '';
   $('discovery-status').textContent = 'Refreshing dataset choices…';
   try {
     const choices = await ACTIVE_API.discoverDatasets();
     state.choices = choices;
-    if (state.selectedFolder && !choices.some(choice => choice.path === state.selectedFolder.path)) state.choices.push(state.selectedFolder);
+    state.selectedFolder = choices.find(choice => choice.path === selectedPath) ?? null;
     renderDatasets();
     const added = state.loaded ? choices.filter(choice => !previousPaths.has(choice.path)).length : 0;
-    $('discovery-status').textContent = added ? `${added} new dataset${added === 1 ? '' : 's'} available. Choose a recording to analyze.` : choices.length ? 'Demo recordings ready' : 'No eligible datasets found. Enter a folder manually.';
-    if (!state.selectedFolder && choices.length) selectDataset(choices.find(choice => choice.path === PREFERRED_DATASET) ?? choices[0]);
+    $('discovery-status').textContent = added ? `${added} new dataset${added === 1 ? '' : 's'} available.` : choices.length ? `${choices.length} recording dataset${choices.length === 1 ? '' : 's'} available.` : 'No recording datasets are available.';
+    if (!state.selectedFolder && choices.length) {
+      selectDataset(choices.find(choice => choice.path === PREFERRED_DATASET || PREFERRED_DATASET.endsWith(`/${choice.path}`)) ?? choices[0]);
+    }
     else if (!choices.length && !state.loaded) $('load-status').textContent = 'No recording selected.';
   } catch (error) {
     $('discovery-status').textContent = error.message; $('discovery-status').className = 'error';
-    $('manual').open = true; if (!state.loaded) $('load-status').textContent = 'Select a recording folder to begin.';
+    if (!state.loaded) $('load-status').textContent = 'Unable to load recording datasets.';
     renderDatasets();
   } finally { discovering = false; $('refresh').disabled = false; }
 }
 function renderDatasets() {
   const select = $('dataset'); select.replaceChildren();
-  if (!state.choices.length) { const option = el('option', '', 'Paste a dataset folder link below'); select.append(option); select.disabled = true; return; }
+  if (!state.choices.length) { const option = el('option', '', 'No datasets available'); select.append(option); select.disabled = true; return; }
   select.disabled = false;
-  for (const group of ['Practice', 'Judging', 'Manual']) {
-    const choices = state.choices.filter(choice => choice.group === group); if (!choices.length) continue;
-    const optgroup = el('optgroup'); optgroup.label = group;
-    choices.forEach(choice => { const option = el('option', '', choice.path); option.value = choice.path; option.selected = choice.path === state.selectedFolder?.path; optgroup.append(option); }); select.append(optgroup);
-  }
+  state.choices.forEach(choice => { const option = el('option', '', choice.path); option.value = choice.path; option.selected = choice.path === state.selectedFolder?.path; select.append(option); });
 }
 function selectDataset(choice) {
   if (!choice) return;
@@ -326,27 +336,21 @@ async function processDatasets() {
   while (state.pendingDataset) {
     const { choice, generation } = state.pendingDataset; state.pendingDataset = null;
     try {
-      const result = await ACTIVE_API.analyzeDataset(choice.url);
+      const mode = state.sort;
+      const context = { dataset: choice.dataset, path: choice.path, asOf: null, revision: null };
+      const [result, networkResult] = await Promise.all([
+        ACTIVE_API.getEvents(choice.dataset, mode),
+        ACTIVE_API.fetchNetwork(context).then(network => ({ network, error: null })).catch(error => ({ network: null, error: error.message }))
+      ]);
       if (generation !== state.datasetGeneration) continue;
-      const context = { folderUrl: choice.url, datasetId: result.datasetId, path: choice.path, asOf: result.asOf, revision: result.revision };
-      let network = null, networkError = null;
-      try { network = await ACTIVE_API.fetchNetwork(context); } catch (error) { networkError = error.message; }
-      if (generation !== state.datasetGeneration) continue;
-      let sorted = result, confirmedSort = null, sortError = null;
-      // Coalesce sort changes during reads; backend state remains serialized.
-      while (true) {
-        const mode = state.sort, sortGeneration = state.sortGeneration;
-        try { sorted = await ACTIVE_API.sortEvents(mode, context); confirmedSort = mode; sortError = null; }
-        catch (error) { sortError = `${mode} sort failed: ${error.message}`; }
-        if (generation !== state.datasetGeneration || sortGeneration === state.sortGeneration) break;
-      }
-      if (generation !== state.datasetGeneration) continue;
-      state.loaded = context; state.network = network; state.networkError = networkError;
-      state.events = sorted.events; state.orderedIds = sorted.events.map(event => event.event_id);
-      state.confirmedSort = confirmedSort; state.sortError = sortError;
+      context.asOf = result.asOf; context.revision = result.revision;
+      state.loaded = context; state.network = networkResult.network; state.networkError = networkResult.error;
+      state.events = result.events; state.rawEvents = result.rawEvents; state.orderedIds = result.events.map(event => event.event_id);
+      state.confirmedSort = mode; state.sortError = null;
       state.scope = 'network'; state.systemId = state.facilityId = state.assetId = state.eventId = null;
       state.viewports.clear(); state.facilityFits.clear(); GeoMap.reset(); state.loading = false; state.datasetError = null;
       renderAll();
+      if (mode !== state.sort) requestSort(state.sort);
     } catch (error) {
       if (generation !== state.datasetGeneration) continue;
       state.loading = false; state.datasetError = error.message; renderAll();
@@ -367,7 +371,7 @@ async function processSorts() {
       const result = await ACTIVE_API.sortEvents(mode, state.loaded);
       if (datasetGeneration !== state.datasetGeneration) return;
       if (generation !== state.sortGeneration) continue;
-      state.events = result.events; state.orderedIds = result.events.map(event => event.event_id);
+      state.events = result.events; state.rawEvents = result.rawEvents; state.orderedIds = result.events.map(event => event.event_id);
       state.confirmedSort = mode; state.sortError = null; clearInvisibleSelection(); renderEvents(); renderInspector(); renderDiagram();
     } catch (error) {
       if (datasetGeneration !== state.datasetGeneration) return;
@@ -380,6 +384,7 @@ async function processSorts() {
 async function manualDataset(event) {
   event.preventDefault();
   const input = $('manual-path').value.trim();
+  const password = $('admin-password').value;
   let path, url;
   try {
     if (/^https?:/i.test(input)) {
@@ -397,17 +402,23 @@ async function manualDataset(event) {
   } catch {
     $('manual-status').textContent = 'Paste an HTTPS GitHub folder link containing /tree/<branch>/<folder>, or a relative challenge folder path.'; return;
   }
-  const submit = event.currentTarget.querySelector('button'); submit.disabled = true;
-  let validated;
-  try { validated = await ACTIVE_API.validateFolder(path); }
-  catch { validated = null; }
-  submit.disabled = false;
-  if (validated === false) { $('manual-status').textContent = 'Folder is accessible but is missing one or more required input files.'; return; }
-  $('manual-status').textContent = validated ? 'All three input files validated.' : 'Analyzing the folder link with the Java backend…';
-  const choice = { path, url, group: 'Manual' };
-  const existing = state.choices.findIndex(item => item.url === url);
-  if (existing < 0) state.choices.push(choice);
-  selectDataset(existing < 0 ? choice : state.choices[existing]);
+  if (!password) { $('manual-status').textContent = 'Enter the admin password to upload this dataset.'; return; }
+  const submit = event.currentTarget.querySelector('button[type="submit"]'); submit.disabled = true;
+  $('manual-status').textContent = 'Verifying access and processing the dataset…';
+  try {
+    await ACTIVE_API.importDataset(url, password);
+    $('admin-password').value = '';
+    await discover();
+    const datasetName = path.split('/').pop();
+    const choice = state.choices.find(item => item.path === datasetName || item.path === path);
+    if (!choice) throw new Error('The upload completed, but the dataset was not returned by the server.');
+    $('manual-status').textContent = 'Dataset uploaded successfully.';
+    $('manual').open = false;
+    selectDataset(choice);
+  } catch (error) {
+    $('admin-password').value = '';
+    $('manual-status').textContent = error.message;
+  } finally { submit.disabled = false; }
 }
 
 /* RENDERING — panels do not rerender while the viewport moves. */
@@ -419,7 +430,7 @@ function renderLoadStatus() {
   } else if (state.datasetError) {
     status.className = 'error'; status.append(document.createTextNode(`${state.datasetError}${state.loaded ? ` Previous results retained: ${state.loaded.path}.` : ''}`), button('Retry analysis', () => selectDataset(state.selectedFolder), 'retry'));
   } else if (state.loaded) status.textContent = `Recording: ${state.loaded.path}`;
-  else status.textContent = 'Paste a GitHub dataset folder link below to begin.';
+  else status.textContent = 'Choose a recording dataset to begin.';
   $('analysis-time').textContent = state.loaded?.asOf != null ? dateText(state.loaded.asOf) : 'Analysis time unavailable';
   $('export').disabled = state.loading || !!state.datasetError || !state.loaded;
   $('diagram-caption-kind').textContent = state.scope === 'facility' ? 'Equipment schematic · not to scale' : 'Geographic positions · indicative connections';
@@ -443,14 +454,17 @@ function renderEvents() {
     empty(list, state.loaded ? 'No matching events' : 'No analysis loaded', state.loaded ? 'No active alert in this view does not establish equipment health.' : 'Choose a recording to inspect backend analysis.', include); return;
   }
   events.forEach(event => {
-    const row = button('', () => selectEvent(event.event_id), `event-row${state.eventId === event.event_id ? ' selected' : ''}`);
+    const row = button('', () => selectEvent(event.event_id), `event-row ${event.status}${state.eventId === event.event_id ? ' selected' : ''}`);
     row.setAttribute('aria-pressed', String(state.eventId === event.event_id)); row.dataset.eventId = event.event_id;
     const top = el('div', 'event-top'); top.append(el('span', 'event-title', `${event.status === 'ongoing' ? '⚠ ' : ''}${categoryText(event.category)}`), el('span', `badge ${event.status}`, event.status));
     row.append(top, el('div', 'event-context', `${event.facility_id ?? 'Facility unavailable'} · ${event.system_id ?? 'System unavailable'} · ${event.event_id}`));
     row.append(el('div', 'event-plan', `${event.status === 'resolved' ? 'Historical: ' : ''}${planSummary(event)}`));
     const metrics = el('div', 'event-metrics'); const countdown = failureCountdown(event);
     if (countdown) metrics.append(el('span', 'countdown', `${countdown}${event.hours_to_limit.p50 > 0 ? ' to limit' : ''}`));
-    metrics.append(el('span', 'quiet', costText(event.est_cost))); row.append(metrics, el('time', 'event-onset', `Onset ${dateText(event.onset_unix)}`)); list.append(row);
+    metrics.append(el('span', 'quiet', costText(event.est_cost)));
+    const times = el('div', 'event-times'); times.append(el('time', 'event-onset', `Onset ${dateText(event.onset_unix)}`));
+    if (event.status === 'resolved') times.append(el('time', 'event-resolution', event.end_unix == null ? '✓ Resolved · time unavailable' : `✓ Resolved ${dateText(event.end_unix)}`));
+    row.append(metrics, times); list.append(row);
   });
 }
 function renderBreadcrumbs() {
@@ -478,6 +492,11 @@ function renderInspector() {
   const event = selectedEvent();
   if (event) {
     panel.append(el('div', 'eyebrow', `Incident · ${event.event_id}`), el('h3', '', categoryText(event.category)), el('p', 'identity', event.asset_id ?? 'Asset unavailable'), el('span', `badge ${event.status}`, event.status));
+    if (event.status === 'resolved') {
+      const resolution = el('div', 'resolution-summary');
+      resolution.append(el('span', '', '✓ EVENT RESOLVED'), el('strong', '', event.end_unix == null ? 'Resolution time unavailable' : dateText(event.end_unix)));
+      panel.append(resolution);
+    }
     const countdown = failureCountdown(event);
     if (countdown) {
       const metric = el('div', 'metric-block urgent'); metric.append(el('span', '', 'TIME TO SHUTDOWN LIMIT · P50'), el('strong', '', countdown), el('span', '', 'Relative to recording endpoint · does not tick'));
@@ -514,7 +533,7 @@ function renderInspector() {
   }
   panel.append(el('div', 'eyebrow', state.scope === 'network' ? 'All systems' : state.scope), el('h3', '', state.scope === 'network' ? 'Network overview' : state.scope === 'system' ? state.systemId : state.facilityId));
   const events = scopeEvents(), counts = el('div', 'status-summary');
-  for (const [label, count] of [['Ongoing', ongoing(events).length], ['Resolved', events.filter(item => item.status === 'resolved').length]]) { const cell = el('span', '', label); cell.prepend(el('strong', '', count)); counts.append(cell); } panel.append(counts);
+  for (const [label, count] of [['Ongoing', ongoing(events).length], ['Resolved', events.filter(item => item.status === 'resolved').length]]) { const cell = el('span', label.toLowerCase(), label); cell.prepend(el('strong', '', count)); counts.append(cell); } panel.append(counts);
   if (state.scope === 'network') {
     panel.append(el('p', 'quiet', `${state.network?.systems.length ?? 0} systems in this recording. Select a system to explore its facilities, or select an event to inspect the affected asset.`));
     const categories = section('Events by category');
@@ -529,7 +548,11 @@ function renderInspector() {
 function appendContextEvents(panel, events) {
   const list = section(state.assetId ? 'Associated incidents' : 'Ongoing responses');
   if (!events.length) list.append(el('p', 'quiet', 'No active alert. Equipment health is not established by the absence of an alert.'));
-  events.forEach(event => { const item = button(categoryText(event.category), () => selectEvent(event.event_id), 'context-event'); item.append(el('small', '', `${event.event_id} · ${event.status} · ${planSummary(event)}`)); list.append(item); }); panel.append(list);
+  events.forEach(event => {
+    const item = button(categoryText(event.category), () => selectEvent(event.event_id), `context-event ${event.status}`);
+    const status = event.status === 'resolved' ? (event.end_unix == null ? 'Resolved · time unavailable' : `Resolved ${dateText(event.end_unix)}`) : event.status;
+    item.append(el('small', `context-event-meta ${event.status}`, `${event.event_id} · ${status} · ${planSummary(event)}`)); list.append(item);
+  }); panel.append(list);
 }
 
 /* DIAGRAM LAYOUT — deterministic membership-based layouts, inline SVG only. */
@@ -640,22 +663,19 @@ async function retryNetwork() {
   renderDiagram(); renderInspector();
 }
 let exportBlobUrl = null;
-async function exportEvents() {
+function exportEvents() {
   if (state.loading || state.datasetError || !state.loaded) return;
-  const generation = ++state.exportGeneration, datasetGeneration = state.datasetGeneration;
-  $('export').disabled = true; $('export-status').textContent = 'Preparing export link…';
   try {
-    const data = await ACTIVE_API.exportEvents(state.loaded);
-    if (generation !== state.exportGeneration || datasetGeneration !== state.datasetGeneration) return;
-    if (!Array.isArray(data.events) || data.dataset_id !== state.loaded.datasetId) throw new Error('Export does not match the selected dataset. Retry analysis.');
+    if (!Array.isArray(state.rawEvents)) throw new Error('No event data is available to export.');
     if (exportBlobUrl) URL.revokeObjectURL(exportBlobUrl);
-    exportBlobUrl = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    const link = el('a', '', `Download events · ${state.loaded.path}`); link.href = exportBlobUrl; link.download = 'watchpot-events.json';
-    $('export-status').replaceChildren(document.createTextNode('Export ready.'), link); link.click();
+    exportBlobUrl = URL.createObjectURL(new Blob([JSON.stringify(state.rawEvents, null, 2)], { type: 'application/json' }));
+    const link = el('a'); link.href = exportBlobUrl;
+    link.download = `${state.loaded.path.replace(/[^a-z0-9._-]+/gi, '-')}-events.json`;
+    link.click();
+    $('export-status').textContent = `${state.rawEvents.length} event${state.rawEvents.length === 1 ? '' : 's'} exported.`;
   } catch (error) {
-    if (generation !== state.exportGeneration || datasetGeneration !== state.datasetGeneration) return;
     $('export-status').replaceChildren(document.createTextNode(`Export failed: ${error.message}`), button('Retry export', exportEvents, 'retry'));
-  } finally { if (generation === state.exportGeneration) renderLoadStatus(); }
+  } finally { renderLoadStatus(); }
 }
 function transform() { if (!state.viewports.has(viewKey())) state.viewports.set(viewKey(), { x: 0, y: 0, scale: 1 }); return state.viewports.get(viewKey()); }
 function applyTransform() {
@@ -774,9 +794,4 @@ document.querySelectorAll('[data-tab]').forEach(node => { if (node.tagName !== '
 document.addEventListener('keydown', event => { if (event.key === 'Escape') { state.eventId = state.assetId = null; renderEvents(); renderInspector(); renderDiagram(); } });
 if (matchMedia('(max-width:1099px)').matches) { $('inspector').classList.add('collapsed'); $('inspector-toggle').setAttribute('aria-expanded', 'false'); }
 setupViewport(); renderAll(); renderDatasets();
-if (DEMO_MODE) discover();
-else {
-  $('manual').open = true;
-  $('refresh').title = 'Reanalyze selected folder';
-  $('refresh').setAttribute('aria-label', 'Reanalyze selected folder');
-}
+discover();

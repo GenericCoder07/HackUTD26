@@ -37,15 +37,15 @@
     </g>
 </svg>
 <div><h1>Watchpot</h1><span>Operations console</span></div></div>
-    <div class="dataset-control"><label for="dataset">Recording dataset</label><div class="dataset-row"><select id="dataset"><option>Paste a dataset folder link below</option></select><button id="refresh" class="header-icon" title="Refresh datasets" aria-label="Refresh datasets">↻</button></div></div>
+    <div class="dataset-control"><label for="dataset">Recording dataset</label><div class="dataset-row"><select id="dataset"><option>Loading datasets…</option></select><button id="refresh" class="header-icon" title="Refresh datasets" aria-label="Refresh datasets">↻</button></div></div>
     <div class="analysis-time"><span>RECORDING ENDPOINT · UTC</span><strong id="analysis-time">Analysis time unavailable</strong></div>
     <span id="mode-indicator" class="mode-indicator" aria-label="Frontend mode"></span>
     <button id="export" class="primary" disabled>Export events</button>
   </header>
   <section class="dataset-notices" aria-label="Dataset status">
-    <div id="load-status" role="status" aria-live="polite">Paste a GitHub dataset folder link below to begin.</div>
+    <div id="load-status" role="status" aria-live="polite">Loading recording datasets…</div>
     <div id="discovery-status"></div>
-    <details id="manual"><summary>Load a GitHub dataset folder</summary><form id="manual-form"><label for="manual-path">GitHub folder link (or relative challenge folder path)</label><div><input id="manual-path" placeholder="https://github.com/nihaal419/HackUTD-ZeroDay/tree/main/history/snapshot_2026-10-08T1200" required autocomplete="off"><button type="submit">Analyze folder</button></div><small id="manual-status">Requires network.json, ops.json, and telemetry.csv.</small></form></details>
+    <details id="manual"><summary>Admin upload</summary><form id="manual-form"><label for="manual-path">GitHub dataset folder</label><div><input id="manual-path" placeholder="https://github.com/nihaal419/HackUTD-ZeroDay/tree/main/history/snapshot_2026-10-08T1200" required autocomplete="off"><input id="admin-password" type="password" placeholder="Admin password" aria-label="Admin password" required autocomplete="current-password"><button type="submit">Upload dataset</button></div><small id="manual-status">Requires network.json, ops.json, and telemetry.csv.</small></form></details>
     <div id="export-status" aria-live="polite"></div>
   </section>
   <nav class="mobile-tabs" aria-label="Workspace"><button data-tab="events" aria-pressed="true">Events</button><button data-tab="diagram" aria-pressed="false">Diagram</button></nav>
