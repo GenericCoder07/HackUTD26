@@ -1,6 +1,9 @@
 package WebServer;
 
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -9,10 +12,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 
 import javax.swing.JOptionPane;
@@ -20,6 +25,7 @@ import javax.swing.JOptionPane;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 
 import com.sun.net.httpserver.HttpServer;
 
@@ -29,8 +35,8 @@ import WebToolkit.FileHandler;
 
 public class WebServer
 {
-	static JSONObject networkJSON;
-	static JSONObject opsJSON;
+	public static final String ADMIN = "EOG2026";
+	public static ConcurrentHashMap<String, LocalDateTime> adminSessions = new ConcurrentHashMap<>();
 	
 	@SuppressWarnings("resource")
 	public static void main(String[] args) throws IOException
@@ -40,65 +46,88 @@ public class WebServer
 		
 		server.start();
 		server.createContext("/", new FileHandler(new File("websiteFiles/html/index.html")));
-		server.createContext("/api/getevents", new APIHandler() {
+		server.createContext("/api/verifyadmin", new APIHandler() {
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
-				if(getStringOrDefault(JSON, "response-method", null) != "POST")
-					badResponse("Method \"" + getStringOrDefault(JSON, "response-method", null) + "\" not recognised by this endpoint");
+				if(!"POST".equals(getStringOrDefault(JSON, "request-method", "")))
+					return badResponse("Only POST is supported by this endpoint", 405);
 				
-				String githubRepo = getStringOrDefault(JSON, "github-repo", null);
-				if(githubRepo == null)
-					return badResponse("GitHub Repo link not included");
+				String adminPassword = getStringOrDefault(JSON, "admin-password", "");
 				
-				if(!loadGithub(githubRepo))
-					return badResponse("GitHub Repo Get Failed");
+				byte[] buf = new byte[32];
+				new SecureRandom().nextBytes(buf);
+				String session = Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
 				
-				Event[] events = getEvents();
+				LocalDateTime expire = LocalDateTime.now().plusMinutes(30);
 				
-				if(events == null || events.length == 0)
-					return badResponse("Event Get Failed");
-				
-				JSONArray eventsArray = new JSONArray();
-				for(Event e : events)
-					eventsArray.put(e.toJSON());
-				
-				System.out.println(eventsArray);
+				if(adminPassword.equals(ADMIN))
+					adminSessions.put(session, expire);
 				
 				JSONObject ret = new JSONObject();
-				ret.put("events", eventsArray);
 				ret.put("response", 200);
-				ret.put("success", true);
-				ret.put("response-text", "Events successfully set");
+				ret.put("success", adminPassword.equals(ADMIN));
+				ret.put("admin-session", adminSessions.containsKey(session) ? session : null);
+				ret.put("response-text", "Admin check returned");
 				
 				return ret;
 			}
 			
 		});
-		server.createContext("/api/resortevents", new APIHandler() {
+		server.createContext("/api/processdata", new APIHandler() {
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
+				if(!"POST".equals(getStringOrDefault(JSON, "request-method", "")))
+					return badResponse("Only POST is supported by this endpoint", 405);
+				
+				String adminSession = getStringOrDefault(JSON, "admin-session", null);
+				
+				LocalDateTime expiresAt = adminSession == null ? null : adminSessions.remove(adminSession);
+				if (expiresAt == null || !expiresAt.isAfter(LocalDateTime.now()))
+					   return badResponse("Invalid permissions", 403);
+				
+				
+				String githubRepo = getStringOrDefault(JSON, "github-repo", null);
+				if(githubRepo == null)
+					return badResponse("GitHub Repo link not included");
+				
+				
+				if(!loadGithub(githubRepo))
+					return badResponse("GitHub Repo Get Failed");
+				
+				processAllPending();
+				
+				JSONObject ret = new JSONObject();
+				ret.put("response", 200);
+				ret.put("success", true);
+				ret.put("response-text", "Events successfully processed");
+				
+				return ret;
+			}
+			
+		});
+		server.createContext("/api/getevents", new APIHandler() {
+
+			public JSONObject handleAPICall(JSONObject JSON)
+			{
+				String dataset = getStringOrDefault(JSON, "dataset", null);
+				if(dataset == null)
+					return badResponse("Dataset not included");
+				
 				String sortParam = getStringOrDefault(JSON, "sort-param", "RECENT");
 				Event.sort = EventSort.valueOf(sortParam);
 				
-				Event[] events = getEvents();
+				processAllPending();
 				
-				if(events == null || events.length == 0)
-					return badResponse("Event Get Failed");
+				JSONArray array = getJSONDataAsArray(new File(dataset), "events");
+				array = sortEventsArray(array);
 				
-				JSONArray eventsArray = new JSONArray();
-				for(Event e : events)
-					eventsArray.put(e.toJSON());
-				
-				System.out.println(eventsArray);
-
 				JSONObject ret = new JSONObject();
-				ret.put("events", eventsArray);
+				ret.put("events", array);
 				ret.put("response", 200);
 				ret.put("success", true);
 				ret.put("response-text", "Events successfully set");
-				
 				
 				return ret;
 			}
@@ -108,8 +137,12 @@ public class WebServer
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
+				String dataset = getStringOrDefault(JSON, "dataset", null);
+				if(dataset == null)
+					return badResponse("Dataset not included");
+				
 				JSONObject ret = new JSONObject();
-				ret.put("network", networkJSON);
+				ret.put("network", getJSONData(new File(dataset), "network"));
 				ret.put("response", 200);
 				ret.put("success", true);
 				ret.put("response-text", "Events successfully set");
@@ -118,43 +151,131 @@ public class WebServer
 			}
 			
 		});
-		server.createContext("/api/exportevents", new APIHandler() {
+		server.createContext("/api/getdatasets", new APIHandler() {
 
 			public JSONObject handleAPICall(JSONObject JSON)
 			{
-				String sortParam = getStringOrDefault(JSON, "sort-param", "RECENT");
-				Event.sort = EventSort.valueOf(sortParam);
+				String[] datasets = new File("websiteFiles/data").list();
 				
-
+				JSONArray datasetNames = new JSONArray();
+				for(String datasetName : datasets)
+					datasetNames.put(datasetName);
+				
 				JSONObject ret = new JSONObject();
+				ret.put("datasets", datasetNames);
 				ret.put("response", 200);
 				ret.put("success", true);
 				ret.put("response-text", "Events successfully set");
-				
 				
 				return ret;
 			}
 			
 		});
-
+		
 		server.createContext("/css", new DirectoryHandler("/css", new File("websiteFiles")));
-		server.createContext("/vendor", new DirectoryHandler("/vendor", new File("websiteFiles")));
+		server.createContext("/vendor", new DirectoryHandler("/vendor", new File("websiteFiles/js")));
 		server.createContext("/js", new DirectoryHandler("/js", new File("websiteFiles")));
 		server.createContext("/images", new DirectoryHandler("/images", new File("websiteFiles")));
 		server.createContext("/favicon.ico", new FileHandler(new File("websiteFiles/favicon.ico")));
 	}
 
-	public static Event[] getEvents()
+	public static JSONArray sortEventsArray(JSONArray array)
 	{
+		Event[] events = new Event[array.length()];
+		
+		for(int i = 0; i < events.length; i++)
+			events[i] = new Event(array.getJSONObject(i));
+		
+		Arrays.sort(events);
+		
+		array = new JSONArray();
+		for(Event e : events)
+			array.put(e.toJSON());
+		
+		return array;
+	}
+
+	public static void processAllPending()
+	{
+		File f = new File("websiteFiles/data");
+		
+		File[] datasets = f.listFiles();
+		for(File dataset : datasets)
+		{
+			if(!isProcessed(dataset))
+				processDataset(dataset);
+		}
+	}
+	
+	public static void processDataset(File dataset)
+	{
+		JSONObject networkJSON = getJSONData(dataset, "network");
+		JSONObject opsJSON = getJSONData(dataset, "ops");
+		
 		try
 		{
-			return new EventAnalyzer(networkJSON, opsJSON).analyze(Path.of("telemetry.csv"));
+			Event[] events = new EventAnalyzer(networkJSON, opsJSON).analyze(Path.of(dataset.getAbsolutePath() + "/telemetry.csv"));
+
+			JSONArray eventsArray = new JSONArray();
+			for(Event e : events)
+				eventsArray.put(e.toJSON());
+			
+			File eventsJSON = new File(dataset.getAbsolutePath() + "/events.json");
+			BufferedWriter writer = new BufferedWriter(new FileWriter(eventsJSON));
+			writer.append(eventsArray.toString());
+			writer.close();
+			
 		}
 		catch(IOException | IllegalArgumentException | JSONException exception)
 		{
 			System.err.println("Event analysis failed: " + exception.getMessage());
-			return null;
 		}
+	}
+
+	public static JSONObject getJSONData(File dataset, String dataName)
+	{
+		try
+		{
+			FileReader fileRead = new FileReader(new File(dataset.getAbsolutePath() + "/" + dataName + ".json"));
+			JSONTokener tokenizer = new JSONTokener(fileRead);
+			JSONObject o = new JSONObject(tokenizer);
+			fileRead.close();
+			
+			return o;
+		} 
+		catch (IOException e)
+		{
+		}
+		
+		return new JSONObject();
+	}
+	
+	public static JSONArray getJSONDataAsArray(File dataset, String dataName)
+	{
+		try
+		{
+			FileReader fileRead = new FileReader(new File(dataset.getAbsolutePath() + "/" + dataName + ".json"));
+			JSONTokener tokenizer = new JSONTokener(fileRead);
+			JSONArray o = new JSONArray(tokenizer);
+			fileRead.close();
+			
+			return o;
+		} 
+		catch (IOException e)
+		{
+		}
+		
+		return new JSONArray();
+	}
+	
+	public static boolean isProcessed(File dataset)
+	{
+		String[] names = dataset.list();
+		for(String str : names)
+			if(str.equals("events.json"))
+				return true;
+		
+		return false;
 	}
 
 	@SuppressWarnings("resource")
@@ -163,7 +284,6 @@ public class WebServer
 		if(github == null)
 			return false;
 
-		Path temporaryCSV = null;
 		try
 		{
 			URI folder = URI.create(github.trim());
@@ -189,40 +309,43 @@ public class WebServer
 			if(owner.isEmpty() || repository.isEmpty() || branch.isEmpty() || directory.length() == 0)
 				return false;
 
-			String rawDirectory = "https://raw.githubusercontent.com/"
-					+ encodePathPart(owner) + "/"
-					+ encodePathPart(repository) + "/"
-					+ encodePathPart(branch) + "/"
-					+ directory + "/";
-
-			HttpClient client = HttpClient.newBuilder()
-					.followRedirects(HttpClient.Redirect.NORMAL)
-					.build();
+			String rawDirectory = "https://raw.githubusercontent.com/" + encodePathPart(owner) + "/" + encodePathPart(repository) + "/" + encodePathPart(branch) + "/" + directory + "/";
+			HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
+			
 			byte[] networkData = download(client, URI.create(rawDirectory + "network.json"));
 			byte[] opsData = download(client, URI.create(rawDirectory + "ops.json"));
 			byte[] telemetryData = download(client, URI.create(rawDirectory + "telemetry.csv"));
 
-			networkJSON = new JSONObject(new String(networkData, StandardCharsets.UTF_8));
-			opsJSON = new JSONObject(new String(opsData, StandardCharsets.UTF_8));
+			String datasetName = parts[parts.length - 1];
+			if(datasetName.isBlank() || ".".equals(datasetName) || "..".equals(datasetName))
+				return false;
+			File dataDirectory = new File("websiteFiles/data").getCanonicalFile();
+			File datasetDirectory = new File(dataDirectory, datasetName).getCanonicalFile();
+			if(!dataDirectory.equals(datasetDirectory.getParentFile()))
+				return false;
+			if(!datasetDirectory.exists() && !datasetDirectory.mkdirs())
+				return false;
 
-			Path telemetryCSV = Path.of("telemetry.csv").toAbsolutePath();
-			temporaryCSV = Files.createTempFile(telemetryCSV.getParent(), ".telemetry-", ".csv.tmp");
-			Files.write(temporaryCSV, telemetryData);
-			try
-			{
-				Files.move(temporaryCSV, telemetryCSV, StandardCopyOption.ATOMIC_MOVE,
-						StandardCopyOption.REPLACE_EXISTING);
-			}
-			catch(AtomicMoveNotSupportedException exception)
-			{
-				Files.move(temporaryCSV, telemetryCSV, StandardCopyOption.REPLACE_EXISTING);
-			}
-			temporaryCSV = null;
-
-			System.out.println(networkJSON);
-			System.out.println(opsJSON);
+			File networkJSON = new File(datasetDirectory, "network.json");
+			BufferedWriter writer = new BufferedWriter(new FileWriter(networkJSON));
+			writer.append(new String(networkData, StandardCharsets.UTF_8));
+			writer.close();
 			
-			return networkJSON != null && opsJSON != null;
+			File opsJSON = new File(datasetDirectory, "ops.json");
+			writer = new BufferedWriter(new FileWriter(opsJSON));
+			writer.append(new String(opsData, StandardCharsets.UTF_8));
+			writer.close();
+			
+			File telemetryCSV = new File(datasetDirectory, "telemetry.csv");
+			writer = new BufferedWriter(new FileWriter(telemetryCSV));
+			writer.append(new String(telemetryData, StandardCharsets.UTF_8));
+			writer.close();
+
+			File eventsJSON = new File(datasetDirectory, "events.json");
+			if(eventsJSON.exists() && !eventsJSON.delete())
+				return false;
+			
+			return true;
 		}
 		catch(IllegalArgumentException | IOException | JSONException exception)
 		{
@@ -232,20 +355,6 @@ public class WebServer
 		{
 			Thread.currentThread().interrupt();
 			return false;
-		}
-		finally
-		{
-			if(temporaryCSV != null)
-			{
-				try
-				{
-					Files.deleteIfExists(temporaryCSV);
-				}
-				catch(IOException exception)
-				{
-					// The failed temporary download can be cleaned up later.
-				}
-			}
 		}
 	}
 
