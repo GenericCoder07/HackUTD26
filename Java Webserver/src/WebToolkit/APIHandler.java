@@ -39,15 +39,11 @@ public abstract class APIHandler implements HttpHandler
 			e.printStackTrace();
 		}
 		
-		System.out.println(object);
-		
 		object.put("request-method", exchange.getRequestMethod());
 		
 		JSONObject response = handleAPICallWrapper(object);
 		String responseString = response.toString();
 		exchange.sendResponseHeaders(response.getInt("response"), responseString.getBytes().length);
-		
-		System.out.println(response);
 		
 		try (OutputStream os = exchange.getResponseBody()) 
 		{
@@ -88,8 +84,13 @@ public abstract class APIHandler implements HttpHandler
 	
 	public JSONObject badResponse(String reason)
 	{
+		return badResponse(reason, 400);
+	}
+	
+	public JSONObject badResponse(String reason, int responseCode)
+	{
 		JSONObject response = new JSONObject();
-		response.put("response", 400);
+		response.put("response", responseCode);
 		response.put("success", false);
 		response.put("response-text", reason);
 		return response;
