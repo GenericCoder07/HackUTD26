@@ -1,0 +1,176 @@
+{
+  "dataset_id": "test_v1",
+  "prices": {
+    "oil_per_bbl": 66,
+    "gas_per_mcf": 2.8
+  },
+  "expected_repair_hours": {
+    "pump_failure": 5
+  },
+  "emergency_trucking": {
+    "truck_capacity_bbl": 130,
+    "cost_per_trip": 800
+  },
+  "systems": {
+    "S6": {
+      "emergency_fleet_size": 2,
+      "facilities": {
+        "S6_FACILITY_A": {
+          "response_min": 90,
+          "cycle_min": 280
+        },
+        "S6_FACILITY_B": {
+          "response_min": 90,
+          "cycle_min": 285
+        },
+        "S6_FACILITY_C": {
+          "response_min": 80,
+          "cycle_min": 260
+        },
+        "S6_FACILITY_D": {
+          "response_min": 95,
+          "cycle_min": 290
+        }
+      }
+    },
+    "S7": {
+      "emergency_fleet_size": 2,
+      "facilities": {
+        "S7_FACILITY_A": {
+          "response_min": 85,
+          "cycle_min": 275
+        },
+        "S7_FACILITY_B": {
+          "response_min": 80,
+          "cycle_min": 270
+        }
+      }
+    },
+    "S8": {
+      "emergency_fleet_size": 3,
+      "facilities": {
+        "S8_FACILITY_A": {
+          "response_min": 85,
+          "cycle_min": 255
+        },
+        "S8_FACILITY_B": {
+          "response_min": 75,
+          "cycle_min": 245
+        },
+        "S8_FACILITY_C": {
+          "response_min": 90,
+          "cycle_min": 260
+        },
+        "S8_FACILITY_D": {
+          "response_min": 80,
+          "cycle_min": 250
+        },
+        "S8_FACILITY_E": {
+          "response_min": 75,
+          "cycle_min": 240
+        }
+      }
+    },
+    "S9": {
+      "emergency_fleet_size": 2,
+      "facilities": {
+        "S9_FACILITY_A": {
+          "response_min": 80,
+          "cycle_min": 240
+        },
+        "S9_FACILITY_B": {
+          "response_min": 75,
+          "cycle_min": 235
+        },
+        "S9_FACILITY_C": {
+          "response_min": 85,
+          "cycle_min": 250
+        }
+      }
+    },
+    "S10": {
+      "emergency_fleet_size": 1,
+      "facilities": {
+        "S10_FACILITY_A": {
+          "response_min": 85,
+          "cycle_min": 270
+        },
+        "S10_FACILITY_B": {
+          "response_min": 80,
+          "cycle_min": 265
+        },
+        "S10_FACILITY_C": {
+          "response_min": 90,
+          "cycle_min": 280
+        },
+        "S10_FACILITY_D": {
+          "response_min": 80,
+          "cycle_min": 275
+        }
+      }
+    },
+    "S11": {
+      "emergency_fleet_size": 2,
+      "facilities": {
+        "S11_FACILITY_A": {
+          "response_min": 75,
+          "cycle_min": 245
+        },
+        "S11_FACILITY_B": {
+          "response_min": 80,
+          "cycle_min": 250
+        }
+      }
+    },
+    "S12": {
+      "emergency_fleet_size": 2,
+      "facilities": {
+        "S12_FACILITY_A": {
+          "response_min": 65,
+          "cycle_min": 250
+        },
+        "S12_FACILITY_B": {
+          "response_min": 55,
+          "cycle_min": 235
+        },
+        "S12_FACILITY_C": {
+          "response_min": 75,
+          "cycle_min": 260
+        },
+        "S12_FACILITY_D": {
+          "response_min": 70,
+          "cycle_min": 245
+        }
+      }
+    },
+    "S13": {
+      "emergency_fleet_size": 3,
+      "facilities": {
+        "S13_FACILITY_A": {
+          "response_min": 45,
+          "cycle_min": 200
+        },
+        "S13_FACILITY_B": {
+          "response_min": 50,
+          "cycle_min": 210
+        },
+        "S13_FACILITY_C": {
+          "response_min": 55,
+          "cycle_min": 220
+        },
+        "S13_FACILITY_D": {
+          "response_min": 60,
+          "cycle_min": 230
+        },
+        "S13_FACILITY_E": {
+          "response_min": 65,
+          "cycle_min": 240
+        },
+        "S13_FACILITY_F": {
+          "response_min": 70,
+          "cycle_min": 250
+        }
+      }
+    }
+  }
+}

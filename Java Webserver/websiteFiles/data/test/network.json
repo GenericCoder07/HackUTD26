@@ -1,0 +1,1378 @@
+{
+  "meta": {
+    "units": {
+      "volume": "bbl",
+      "rate": "bpd",
+      "gas_rate": "mcfd",
+      "pressure": "psi"
+    },
+    "timezone": "UTC",
+    "demo_note": "Locally modified test: S12 is synthetic. Existing systems and telemetry are unchanged. Original files are in test/original_before_demo/. S13 adds three synthetic pipeline leaks and three pump degradations.",
+    "demo_failure_onsets": {
+      "S12_FACILITY_A": "2026-10-11T22:25:00Z",
+      "S12_FACILITY_B": "2026-10-11T22:55:00Z",
+      "S12_FACILITY_C": "2026-10-11T23:10:00Z",
+      "S12_FACILITY_D": "2026-10-11T23:25:00Z"
+    }
+  },
+  "defaults": {
+    "tank_limits_pct": {
+      "warning": 85,
+      "shutdown": 92
+    }
+  },
+  "systems": [
+    {
+      "id": "S6",
+      "center": [
+        30.9,
+        -102.6
+      ],
+      "truck_yard": [
+        30.6,
+        -102.95
+      ],
+      "disposal_site": {
+        "id": "S6_DISPOSAL",
+        "lat": 30.915,
+        "lon": -102.595,
+        "pressure_psi": 1180
+      },
+      "facilities": [
+        {
+          "id": "S6_FACILITY_A",
+          "lat": 30.96,
+          "lon": -102.65,
+          "wells": [
+            {
+              "id": "S6_WELL_A1",
+              "baseline_water_bpd": 1000,
+              "oil_bpd": 400,
+              "gas_mcfd": 1200
+            },
+            {
+              "id": "S6_WELL_A2",
+              "baseline_water_bpd": 900,
+              "oil_bpd": 500,
+              "gas_mcfd": 1900
+            },
+            {
+              "id": "S6_WELL_A3",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 550,
+              "gas_mcfd": 2200
+            }
+          ],
+          "tank": {
+            "id": "S6_TANK_A",
+            "capacity_bbl": 1300
+          },
+          "pump": {
+            "id": "S6_PUMP_A",
+            "max_flow_bpd": 3800,
+            "start_level_pct": 65,
+            "stop_level_pct": 25
+          },
+          "pipeline": {
+            "id": "S6_PIPELINE_A",
+            "max_bpd": 4200,
+            "max_pressure_psi": 1820
+          }
+        },
+        {
+          "id": "S6_FACILITY_B",
+          "lat": 30.88,
+          "lon": -102.54,
+          "wells": [
+            {
+              "id": "S6_WELL_B1",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 200,
+              "gas_mcfd": 900
+            },
+            {
+              "id": "S6_WELL_B2",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 450,
+              "gas_mcfd": 1500
+            },
+            {
+              "id": "S6_WELL_B3",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 490,
+              "gas_mcfd": 1700
+            }
+          ],
+          "tank": {
+            "id": "S6_TANK_B",
+            "capacity_bbl": 950
+          },
+          "pump": {
+            "id": "S6_PUMP_B",
+            "max_flow_bpd": 2700,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S6_PIPELINE_B",
+            "max_bpd": 3000,
+            "max_pressure_psi": 1820
+          }
+        },
+        {
+          "id": "S6_FACILITY_C",
+          "lat": 30.85,
+          "lon": -102.64,
+          "wells": [
+            {
+              "id": "S6_WELL_C1",
+              "baseline_water_bpd": 800,
+              "oil_bpd": 250,
+              "gas_mcfd": 800
+            },
+            {
+              "id": "S6_WELL_C2",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 230,
+              "gas_mcfd": 900
+            },
+            {
+              "id": "S6_WELL_C3",
+              "baseline_water_bpd": 300,
+              "oil_bpd": 300,
+              "gas_mcfd": 1200
+            }
+          ],
+          "tank": {
+            "id": "S6_TANK_C",
+            "capacity_bbl": 700
+          },
+          "pump": {
+            "id": "S6_PUMP_C",
+            "max_flow_bpd": 2400,
+            "start_level_pct": 75,
+            "stop_level_pct": 35
+          },
+          "pipeline": {
+            "id": "S6_PIPELINE_C",
+            "max_bpd": 2650,
+            "max_pressure_psi": 1820
+          }
+        },
+        {
+          "id": "S6_FACILITY_D",
+          "lat": 30.93,
+          "lon": -102.56,
+          "wells": [
+            {
+              "id": "S6_WELL_D1",
+              "baseline_water_bpd": 350,
+              "oil_bpd": 330,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S6_WELL_D2",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 80,
+              "gas_mcfd": 300
+            },
+            {
+              "id": "S6_WELL_D3",
+              "baseline_water_bpd": 350,
+              "oil_bpd": 230,
+              "gas_mcfd": 900
+            }
+          ],
+          "tank": {
+            "id": "S6_TANK_D",
+            "capacity_bbl": 600
+          },
+          "pump": {
+            "id": "S6_PUMP_D",
+            "max_flow_bpd": 1700,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S6_PIPELINE_D",
+            "max_bpd": 1900,
+            "max_pressure_psi": 1820
+          }
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "center": [
+        31.1,
+        -103.2
+      ],
+      "truck_yard": [
+        31.35,
+        -102.85
+      ],
+      "disposal_site": {
+        "id": "S7_DISPOSAL",
+        "lat": 31.12,
+        "lon": -103.19,
+        "pressure_psi": 1085
+      },
+      "facilities": [
+        {
+          "id": "S7_FACILITY_A",
+          "lat": 31.16,
+          "lon": -103.25,
+          "wells": [
+            {
+              "id": "S7_WELL_A1",
+              "baseline_water_bpd": 900,
+              "oil_bpd": 350,
+              "gas_mcfd": 1300
+            },
+            {
+              "id": "S7_WELL_A2",
+              "baseline_water_bpd": 800,
+              "oil_bpd": 450,
+              "gas_mcfd": 1700
+            },
+            {
+              "id": "S7_WELL_A3",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 530,
+              "gas_mcfd": 1800
+            }
+          ],
+          "tank": {
+            "id": "S7_TANK_A",
+            "capacity_bbl": 1100
+          },
+          "pump": {
+            "id": "S7_PUMP_A",
+            "max_flow_bpd": 3300,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S7_PIPELINE_A",
+            "max_bpd": 3700,
+            "max_pressure_psi": 1730
+          }
+        },
+        {
+          "id": "S7_FACILITY_B",
+          "lat": 31.06,
+          "lon": -103.13,
+          "wells": [
+            {
+              "id": "S7_WELL_B1",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 300,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S7_WELL_B2",
+              "baseline_water_bpd": 650,
+              "oil_bpd": 280,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S7_WELL_B3",
+              "baseline_water_bpd": 450,
+              "oil_bpd": 400,
+              "gas_mcfd": 1400
+            }
+          ],
+          "tank": {
+            "id": "S7_TANK_B",
+            "capacity_bbl": 800
+          },
+          "pump": {
+            "id": "S7_PUMP_B",
+            "max_flow_bpd": 2600,
+            "start_level_pct": 65,
+            "stop_level_pct": 25
+          },
+          "pipeline": {
+            "id": "S7_PIPELINE_B",
+            "max_bpd": 2900,
+            "max_pressure_psi": 1730
+          }
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "center": [
+        32.5,
+        -102.3
+      ],
+      "truck_yard": [
+        32.8,
+        -101.95
+      ],
+      "disposal_site": {
+        "id": "S8_DISPOSAL",
+        "lat": 32.49,
+        "lon": -102.31,
+        "pressure_psi": 1120
+      },
+      "facilities": [
+        {
+          "id": "S8_FACILITY_A",
+          "lat": 32.56,
+          "lon": -102.36,
+          "wells": [
+            {
+              "id": "S8_WELL_A1",
+              "baseline_water_bpd": 1100,
+              "oil_bpd": 400,
+              "gas_mcfd": 1500
+            },
+            {
+              "id": "S8_WELL_A2",
+              "baseline_water_bpd": 900,
+              "oil_bpd": 500,
+              "gas_mcfd": 2000
+            },
+            {
+              "id": "S8_WELL_A3",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 650,
+              "gas_mcfd": 2200
+            }
+          ],
+          "tank": {
+            "id": "S8_TANK_A",
+            "capacity_bbl": 1350
+          },
+          "pump": {
+            "id": "S8_PUMP_A",
+            "max_flow_bpd": 4000,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S8_PIPELINE_A",
+            "max_bpd": 4400,
+            "max_pressure_psi": 1770
+          }
+        },
+        {
+          "id": "S8_FACILITY_B",
+          "lat": 32.48,
+          "lon": -102.28,
+          "wells": [
+            {
+              "id": "S8_WELL_B1",
+              "baseline_water_bpd": 900,
+              "oil_bpd": 300,
+              "gas_mcfd": 1500
+            },
+            {
+              "id": "S8_WELL_B2",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 400,
+              "gas_mcfd": 1400
+            },
+            {
+              "id": "S8_WELL_B3",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 500,
+              "gas_mcfd": 1600
+            }
+          ],
+          "tank": {
+            "id": "S8_TANK_B",
+            "capacity_bbl": 900
+          },
+          "pump": {
+            "id": "S8_PUMP_B",
+            "max_flow_bpd": 3300,
+            "start_level_pct": 60,
+            "stop_level_pct": 20
+          },
+          "pipeline": {
+            "id": "S8_PIPELINE_B",
+            "max_bpd": 3600,
+            "max_pressure_psi": 1770
+          }
+        },
+        {
+          "id": "S8_FACILITY_C",
+          "lat": 32.44,
+          "lon": -102.36,
+          "wells": [
+            {
+              "id": "S8_WELL_C1",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 330,
+              "gas_mcfd": 1300
+            },
+            {
+              "id": "S8_WELL_C2",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 200,
+              "gas_mcfd": 700
+            },
+            {
+              "id": "S8_WELL_C3",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 350,
+              "gas_mcfd": 1200
+            }
+          ],
+          "tank": {
+            "id": "S8_TANK_C",
+            "capacity_bbl": 800
+          },
+          "pump": {
+            "id": "S8_PUMP_C",
+            "max_flow_bpd": 2200,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S8_PIPELINE_C",
+            "max_bpd": 2450,
+            "max_pressure_psi": 1770
+          }
+        },
+        {
+          "id": "S8_FACILITY_D",
+          "lat": 32.54,
+          "lon": -102.2,
+          "wells": [
+            {
+              "id": "S8_WELL_D1",
+              "baseline_water_bpd": 800,
+              "oil_bpd": 250,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S8_WELL_D2",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 380,
+              "gas_mcfd": 1400
+            },
+            {
+              "id": "S8_WELL_D3",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 460,
+              "gas_mcfd": 1600
+            }
+          ],
+          "tank": {
+            "id": "S8_TANK_D",
+            "capacity_bbl": 1000
+          },
+          "pump": {
+            "id": "S8_PUMP_D",
+            "max_flow_bpd": 2900,
+            "start_level_pct": 75,
+            "stop_level_pct": 35
+          },
+          "pipeline": {
+            "id": "S8_PIPELINE_D",
+            "max_bpd": 3200,
+            "max_pressure_psi": 1590
+          }
+        },
+        {
+          "id": "S8_FACILITY_E",
+          "lat": 32.43,
+          "lon": -102.23,
+          "wells": [
+            {
+              "id": "S8_WELL_E1",
+              "baseline_water_bpd": 450,
+              "oil_bpd": 300,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S8_WELL_E2",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 150,
+              "gas_mcfd": 600
+            },
+            {
+              "id": "S8_WELL_E3",
+              "baseline_water_bpd": 350,
+              "oil_bpd": 250,
+              "gas_mcfd": 800
+            }
+          ],
+          "tank": {
+            "id": "S8_TANK_E",
+            "capacity_bbl": 600
+          },
+          "pump": {
+            "id": "S8_PUMP_E",
+            "max_flow_bpd": 1900,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S8_PIPELINE_E",
+            "max_bpd": 2100,
+            "max_pressure_psi": 1590
+          }
+        }
+      ]
+    },
+    {
+      "id": "S9",
+      "center": [
+        32.35,
+        -101.4
+      ],
+      "truck_yard": [
+        32.65,
+        -101.0
+      ],
+      "disposal_site": {
+        "id": "S9_DISPOSAL",
+        "lat": 32.35,
+        "lon": -101.41,
+        "pressure_psi": 1040
+      },
+      "facilities": [
+        {
+          "id": "S9_FACILITY_A",
+          "lat": 32.4,
+          "lon": -101.46,
+          "wells": [
+            {
+              "id": "S9_WELL_A1",
+              "baseline_water_bpd": 800,
+              "oil_bpd": 280,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S9_WELL_A2",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 420,
+              "gas_mcfd": 1500
+            },
+            {
+              "id": "S9_WELL_A3",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 480,
+              "gas_mcfd": 1700
+            }
+          ],
+          "tank": {
+            "id": "S9_TANK_A",
+            "capacity_bbl": 1000
+          },
+          "pump": {
+            "id": "S9_PUMP_A",
+            "max_flow_bpd": 3000,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S9_PIPELINE_A",
+            "max_bpd": 3300,
+            "max_pressure_psi": 1690
+          }
+        },
+        {
+          "id": "S9_FACILITY_B",
+          "lat": 32.32,
+          "lon": -101.36,
+          "wells": [
+            {
+              "id": "S9_WELL_B1",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 220,
+              "gas_mcfd": 800
+            },
+            {
+              "id": "S9_WELL_B2",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 320,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S9_WELL_B3",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 420,
+              "gas_mcfd": 1400
+            }
+          ],
+          "tank": {
+            "id": "S9_TANK_B",
+            "capacity_bbl": 700
+          },
+          "pump": {
+            "id": "S9_PUMP_B",
+            "max_flow_bpd": 2450,
+            "start_level_pct": 65,
+            "stop_level_pct": 25
+          },
+          "pipeline": {
+            "id": "S9_PIPELINE_B",
+            "max_bpd": 2700,
+            "max_pressure_psi": 1690
+          }
+        },
+        {
+          "id": "S9_FACILITY_C",
+          "lat": 32.29,
+          "lon": -101.47,
+          "wells": [
+            {
+              "id": "S9_WELL_C1",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 380,
+              "gas_mcfd": 1200
+            },
+            {
+              "id": "S9_WELL_C2",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 150,
+              "gas_mcfd": 600
+            },
+            {
+              "id": "S9_WELL_C3",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 230,
+              "gas_mcfd": 800
+            }
+          ],
+          "tank": {
+            "id": "S9_TANK_C",
+            "capacity_bbl": 650
+          },
+          "pump": {
+            "id": "S9_PUMP_C",
+            "max_flow_bpd": 2000,
+            "start_level_pct": 75,
+            "stop_level_pct": 35
+          },
+          "pipeline": {
+            "id": "S9_PIPELINE_C",
+            "max_bpd": 2200,
+            "max_pressure_psi": 1690
+          }
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "center": [
+        31.0,
+        -101.6
+      ],
+      "truck_yard": [
+        31.3,
+        -101.25
+      ],
+      "disposal_site": {
+        "id": "S10_DISPOSAL",
+        "lat": 31.02,
+        "lon": -101.62,
+        "pressure_psi": 1060
+      },
+      "facilities": [
+        {
+          "id": "S10_FACILITY_A",
+          "lat": 31.06,
+          "lon": -101.66,
+          "wells": [
+            {
+              "id": "S10_WELL_A1",
+              "baseline_water_bpd": 1000,
+              "oil_bpd": 300,
+              "gas_mcfd": 1200
+            },
+            {
+              "id": "S10_WELL_A2",
+              "baseline_water_bpd": 800,
+              "oil_bpd": 450,
+              "gas_mcfd": 1800
+            },
+            {
+              "id": "S10_WELL_A3",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 650,
+              "gas_mcfd": 2100
+            }
+          ],
+          "tank": {
+            "id": "S10_TANK_A",
+            "capacity_bbl": 1100
+          },
+          "pump": {
+            "id": "S10_PUMP_A",
+            "max_flow_bpd": 3500,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S10_PIPELINE_A",
+            "max_bpd": 3900,
+            "max_pressure_psi": 1710
+          }
+        },
+        {
+          "id": "S10_FACILITY_B",
+          "lat": 30.98,
+          "lon": -101.58,
+          "wells": [
+            {
+              "id": "S10_WELL_B1",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 420,
+              "gas_mcfd": 1500
+            },
+            {
+              "id": "S10_WELL_B2",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 230,
+              "gas_mcfd": 900
+            },
+            {
+              "id": "S10_WELL_B3",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 400,
+              "gas_mcfd": 1400
+            }
+          ],
+          "tank": {
+            "id": "S10_TANK_B",
+            "capacity_bbl": 900
+          },
+          "pump": {
+            "id": "S10_PUMP_B",
+            "max_flow_bpd": 2700,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S10_PIPELINE_B",
+            "max_bpd": 3000,
+            "max_pressure_psi": 1710
+          }
+        },
+        {
+          "id": "S10_FACILITY_C",
+          "lat": 30.94,
+          "lon": -101.68,
+          "wells": [
+            {
+              "id": "S10_WELL_C1",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 200,
+              "gas_mcfd": 800
+            },
+            {
+              "id": "S10_WELL_C2",
+              "baseline_water_bpd": 500,
+              "oil_bpd": 260,
+              "gas_mcfd": 900
+            },
+            {
+              "id": "S10_WELL_C3",
+              "baseline_water_bpd": 300,
+              "oil_bpd": 340,
+              "gas_mcfd": 1200
+            }
+          ],
+          "tank": {
+            "id": "S10_TANK_C",
+            "capacity_bbl": 650
+          },
+          "pump": {
+            "id": "S10_PUMP_C",
+            "max_flow_bpd": 2200,
+            "start_level_pct": 65,
+            "stop_level_pct": 25
+          },
+          "pipeline": {
+            "id": "S10_PIPELINE_C",
+            "max_bpd": 2450,
+            "max_pressure_psi": 1570
+          }
+        },
+        {
+          "id": "S10_FACILITY_D",
+          "lat": 31.03,
+          "lon": -101.52,
+          "wells": [
+            {
+              "id": "S10_WELL_D1",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 140,
+              "gas_mcfd": 500
+            },
+            {
+              "id": "S10_WELL_D2",
+              "baseline_water_bpd": 350,
+              "oil_bpd": 190,
+              "gas_mcfd": 700
+            },
+            {
+              "id": "S10_WELL_D3",
+              "baseline_water_bpd": 250,
+              "oil_bpd": 230,
+              "gas_mcfd": 800
+            }
+          ],
+          "tank": {
+            "id": "S10_TANK_D",
+            "capacity_bbl": 500
+          },
+          "pump": {
+            "id": "S10_PUMP_D",
+            "max_flow_bpd": 1500,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S10_PIPELINE_D",
+            "max_bpd": 1700,
+            "max_pressure_psi": 1570
+          }
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "center": [
+        31.75,
+        -103.3
+      ],
+      "truck_yard": [
+        32.05,
+        -103.0
+      ],
+      "disposal_site": {
+        "id": "S11_DISPOSAL",
+        "lat": 31.75,
+        "lon": -103.3,
+        "pressure_psi": 990
+      },
+      "facilities": [
+        {
+          "id": "S11_FACILITY_A",
+          "lat": 31.8,
+          "lon": -103.35,
+          "wells": [
+            {
+              "id": "S11_WELL_A1",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 250,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S11_WELL_A2",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 330,
+              "gas_mcfd": 1200
+            },
+            {
+              "id": "S11_WELL_A3",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 420,
+              "gas_mcfd": 1400
+            }
+          ],
+          "tank": {
+            "id": "S11_TANK_A",
+            "capacity_bbl": 800
+          },
+          "pump": {
+            "id": "S11_PUMP_A",
+            "max_flow_bpd": 2600,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S11_PIPELINE_A",
+            "max_bpd": 2850,
+            "max_pressure_psi": 1640
+          }
+        },
+        {
+          "id": "S11_FACILITY_B",
+          "lat": 31.71,
+          "lon": -103.26,
+          "wells": [
+            {
+              "id": "S11_WELL_B1",
+              "baseline_water_bpd": 450,
+              "oil_bpd": 340,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S11_WELL_B2",
+              "baseline_water_bpd": 450,
+              "oil_bpd": 150,
+              "gas_mcfd": 600
+            },
+            {
+              "id": "S11_WELL_B3",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 270,
+              "gas_mcfd": 900
+            }
+          ],
+          "tank": {
+            "id": "S11_TANK_B",
+            "capacity_bbl": 700
+          },
+          "pump": {
+            "id": "S11_PUMP_B",
+            "max_flow_bpd": 2000,
+            "start_level_pct": 75,
+            "stop_level_pct": 35
+          },
+          "pipeline": {
+            "id": "S11_PIPELINE_B",
+            "max_bpd": 2200,
+            "max_pressure_psi": 1640
+          }
+        }
+      ]
+    },
+    {
+      "id": "S12",
+      "center": [
+        31.95,
+        -101.85
+      ],
+      "truck_yard": [
+        31.9,
+        -101.9
+      ],
+      "disposal_site": {
+        "id": "S12_DISPOSAL",
+        "lat": 31.95,
+        "lon": -101.85,
+        "pressure_psi": 1100
+      },
+      "facilities": [
+        {
+          "id": "S12_FACILITY_A",
+          "lat": 31.92,
+          "lon": -101.92,
+          "wells": [
+            {
+              "id": "S12_WELL_A1",
+              "baseline_water_bpd": 850,
+              "oil_bpd": 380,
+              "gas_mcfd": 1200
+            },
+            {
+              "id": "S12_WELL_A2",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 510,
+              "gas_mcfd": 1800
+            },
+            {
+              "id": "S12_WELL_A3",
+              "baseline_water_bpd": 470,
+              "oil_bpd": 420,
+              "gas_mcfd": 1500
+            }
+          ],
+          "tank": {
+            "id": "S12_TANK_A",
+            "capacity_bbl": 900
+          },
+          "pump": {
+            "id": "S12_PUMP_A",
+            "max_flow_bpd": 2900,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S12_PIPELINE_A",
+            "max_bpd": 3300,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S12_FACILITY_B",
+          "lat": 31.945,
+          "lon": -101.885,
+          "wells": [
+            {
+              "id": "S12_WELL_B1",
+              "baseline_water_bpd": 620,
+              "oil_bpd": 330,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S12_WELL_B2",
+              "baseline_water_bpd": 530,
+              "oil_bpd": 460,
+              "gas_mcfd": 1600
+            },
+            {
+              "id": "S12_WELL_B3",
+              "baseline_water_bpd": 410,
+              "oil_bpd": 390,
+              "gas_mcfd": 1300
+            }
+          ],
+          "tank": {
+            "id": "S12_TANK_B",
+            "capacity_bbl": 750
+          },
+          "pump": {
+            "id": "S12_PUMP_B",
+            "max_flow_bpd": 2400,
+            "start_level_pct": 68,
+            "stop_level_pct": 28
+          },
+          "pipeline": {
+            "id": "S12_PIPELINE_B",
+            "max_bpd": 2800,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S12_FACILITY_C",
+          "lat": 31.970000000000002,
+          "lon": -101.85000000000001,
+          "wells": [
+            {
+              "id": "S12_WELL_C1",
+              "baseline_water_bpd": 700,
+              "oil_bpd": 15,
+              "gas_mcfd": 60
+            },
+            {
+              "id": "S12_WELL_C2",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 310,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S12_WELL_C3",
+              "baseline_water_bpd": 220,
+              "oil_bpd": 450,
+              "gas_mcfd": 1700
+            }
+          ],
+          "tank": {
+            "id": "S12_TANK_C",
+            "capacity_bbl": 650
+          },
+          "pump": {
+            "id": "S12_PUMP_C",
+            "max_flow_bpd": 2050,
+            "start_level_pct": 72,
+            "stop_level_pct": 32
+          },
+          "pipeline": {
+            "id": "S12_PIPELINE_C",
+            "max_bpd": 2450,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S12_FACILITY_D",
+          "lat": 31.995,
+          "lon": -101.815,
+          "wells": [
+            {
+              "id": "S12_WELL_D1",
+              "baseline_water_bpd": 260,
+              "oil_bpd": 220,
+              "gas_mcfd": 800
+            },
+            {
+              "id": "S12_WELL_D2",
+              "baseline_water_bpd": 190,
+              "oil_bpd": 280,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S12_WELL_D3",
+              "baseline_water_bpd": 150,
+              "oil_bpd": 340,
+              "gas_mcfd": 1250
+            }
+          ],
+          "tank": {
+            "id": "S12_TANK_D",
+            "capacity_bbl": 1800
+          },
+          "pump": {
+            "id": "S12_PUMP_D",
+            "max_flow_bpd": 950,
+            "start_level_pct": 65,
+            "stop_level_pct": 25
+          },
+          "pipeline": {
+            "id": "S12_PIPELINE_D",
+            "max_bpd": 1350,
+            "max_pressure_psi": 1800
+          }
+        }
+      ]
+    },
+    {
+      "id": "S13",
+      "center": [
+        32.12,
+        -101.72
+      ],
+      "truck_yard": [
+        32.1,
+        -101.75
+      ],
+      "disposal_site": {
+        "id": "S13_DISPOSAL",
+        "lat": 32.12,
+        "lon": -101.72,
+        "pressure_psi": 1150
+      },
+      "facilities": [
+        {
+          "id": "S13_FACILITY_A",
+          "lat": 32.07,
+          "lon": -101.8,
+          "wells": [
+            {
+              "id": "S13_WELL_A1",
+              "baseline_water_bpd": 420,
+              "oil_bpd": 180,
+              "gas_mcfd": 600
+            },
+            {
+              "id": "S13_WELL_A2",
+              "baseline_water_bpd": 280,
+              "oil_bpd": 230,
+              "gas_mcfd": 800
+            },
+            {
+              "id": "S13_WELL_A3",
+              "baseline_water_bpd": 190,
+              "oil_bpd": 280,
+              "gas_mcfd": 1000
+            }
+          ],
+          "tank": {
+            "id": "S13_TANK_A",
+            "capacity_bbl": 700
+          },
+          "pump": {
+            "id": "S13_PUMP_A",
+            "max_flow_bpd": 1500,
+            "start_level_pct": 65,
+            "stop_level_pct": 25
+          },
+          "pipeline": {
+            "id": "S13_PIPELINE_A",
+            "max_bpd": 1900,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S13_FACILITY_B",
+          "lat": 32.088,
+          "lon": -101.773,
+          "wells": [
+            {
+              "id": "S13_WELL_B1",
+              "baseline_water_bpd": 465,
+              "oil_bpd": 215,
+              "gas_mcfd": 700
+            },
+            {
+              "id": "S13_WELL_B2",
+              "baseline_water_bpd": 310,
+              "oil_bpd": 265,
+              "gas_mcfd": 900
+            },
+            {
+              "id": "S13_WELL_B3",
+              "baseline_water_bpd": 210,
+              "oil_bpd": 315,
+              "gas_mcfd": 1100
+            }
+          ],
+          "tank": {
+            "id": "S13_TANK_B",
+            "capacity_bbl": 830
+          },
+          "pump": {
+            "id": "S13_PUMP_B",
+            "max_flow_bpd": 1680,
+            "start_level_pct": 66,
+            "stop_level_pct": 26
+          },
+          "pipeline": {
+            "id": "S13_PIPELINE_B",
+            "max_bpd": 2080,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S13_FACILITY_C",
+          "lat": 32.106,
+          "lon": -101.746,
+          "wells": [
+            {
+              "id": "S13_WELL_C1",
+              "baseline_water_bpd": 510,
+              "oil_bpd": 250,
+              "gas_mcfd": 800
+            },
+            {
+              "id": "S13_WELL_C2",
+              "baseline_water_bpd": 340,
+              "oil_bpd": 300,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S13_WELL_C3",
+              "baseline_water_bpd": 230,
+              "oil_bpd": 350,
+              "gas_mcfd": 1200
+            }
+          ],
+          "tank": {
+            "id": "S13_TANK_C",
+            "capacity_bbl": 960
+          },
+          "pump": {
+            "id": "S13_PUMP_C",
+            "max_flow_bpd": 1860,
+            "start_level_pct": 67,
+            "stop_level_pct": 27
+          },
+          "pipeline": {
+            "id": "S13_PIPELINE_C",
+            "max_bpd": 2260,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S13_FACILITY_D",
+          "lat": 32.124,
+          "lon": -101.719,
+          "wells": [
+            {
+              "id": "S13_WELL_D1",
+              "baseline_water_bpd": 555,
+              "oil_bpd": 285,
+              "gas_mcfd": 900
+            },
+            {
+              "id": "S13_WELL_D2",
+              "baseline_water_bpd": 370,
+              "oil_bpd": 335,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S13_WELL_D3",
+              "baseline_water_bpd": 250,
+              "oil_bpd": 385,
+              "gas_mcfd": 1300
+            }
+          ],
+          "tank": {
+            "id": "S13_TANK_D",
+            "capacity_bbl": 1090
+          },
+          "pump": {
+            "id": "S13_PUMP_D",
+            "max_flow_bpd": 2040,
+            "start_level_pct": 68,
+            "stop_level_pct": 28
+          },
+          "pipeline": {
+            "id": "S13_PIPELINE_D",
+            "max_bpd": 2440,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S13_FACILITY_E",
+          "lat": 32.142,
+          "lon": -101.692,
+          "wells": [
+            {
+              "id": "S13_WELL_E1",
+              "baseline_water_bpd": 600,
+              "oil_bpd": 320,
+              "gas_mcfd": 1000
+            },
+            {
+              "id": "S13_WELL_E2",
+              "baseline_water_bpd": 400,
+              "oil_bpd": 370,
+              "gas_mcfd": 1200
+            },
+            {
+              "id": "S13_WELL_E3",
+              "baseline_water_bpd": 270,
+              "oil_bpd": 420,
+              "gas_mcfd": 1400
+            }
+          ],
+          "tank": {
+            "id": "S13_TANK_E",
+            "capacity_bbl": 1220
+          },
+          "pump": {
+            "id": "S13_PUMP_E",
+            "max_flow_bpd": 2220,
+            "start_level_pct": 69,
+            "stop_level_pct": 29
+          },
+          "pipeline": {
+            "id": "S13_PIPELINE_E",
+            "max_bpd": 2620,
+            "max_pressure_psi": 1800
+          }
+        },
+        {
+          "id": "S13_FACILITY_F",
+          "lat": 32.160000000000004,
+          "lon": -101.66499999999999,
+          "wells": [
+            {
+              "id": "S13_WELL_F1",
+              "baseline_water_bpd": 645,
+              "oil_bpd": 355,
+              "gas_mcfd": 1100
+            },
+            {
+              "id": "S13_WELL_F2",
+              "baseline_water_bpd": 430,
+              "oil_bpd": 405,
+              "gas_mcfd": 1300
+            },
+            {
+              "id": "S13_WELL_F3",
+              "baseline_water_bpd": 290,
+              "oil_bpd": 455,
+              "gas_mcfd": 1500
+            }
+          ],
+          "tank": {
+            "id": "S13_TANK_F",
+            "capacity_bbl": 1350
+          },
+          "pump": {
+            "id": "S13_PUMP_F",
+            "max_flow_bpd": 2400,
+            "start_level_pct": 70,
+            "stop_level_pct": 30
+          },
+          "pipeline": {
+            "id": "S13_PIPELINE_F",
+            "max_bpd": 2800,
+            "max_pressure_psi": 1800
+          }
+        }
+      ]
+    }
+  ]
+}
