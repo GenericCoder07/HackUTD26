@@ -6,6 +6,12 @@ public enum EventSort
 {
 	RECENT((A, B) -> {
 		return Long.compare(B.onsetUnix, A.onsetUnix);
+	}),
+	COST((A, B) -> {
+		return A.estimatedCost != null && B.estimatedCost != null ? Double.compare(B.estimatedCost, A.estimatedCost) : 0;
+	}),
+	PRIORITY((A, B) -> {
+		return A.hoursToLimit != null && B.hoursToLimit != null ? Double.compare(A.hoursToLimit, B.hoursToLimit) : 0;
 	});
 	
 	private BiFunction<Event, Event, Integer> func;
